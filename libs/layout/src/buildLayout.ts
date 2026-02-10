@@ -53,7 +53,8 @@ const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }>
   split: { width: 300, height: 170 },
   wait: { width: 140, height: 56 },
   message: { width: 300, height: 150 },
-  outcome: { width: 260, height: 90 }
+  outcome: { width: 260, height: 90 },
+  note: { width: 320, height: 160 }
 };
 
 function labelSortScore(label?: string): number {

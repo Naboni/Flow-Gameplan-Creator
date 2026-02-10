@@ -181,8 +181,47 @@ body {
   border-left: 4px solid #5b8eff;
 }
 
+.canvas-node-profileFilter {
+  border-left: 4px solid #e6a24c;
+}
+
 .canvas-node-outcome {
   border-left: 4px solid #70b98b;
+}
+
+.canvas-node-note {
+  background: #fff3e0;
+  border: 2px solid #f5c17b;
+  border-left: 4px solid #f5a623;
+  min-width: 240px;
+  max-width: 340px;
+  padding: 14px 16px;
+}
+
+.canvas-node-note.selected {
+  border-color: #e08a00;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.3);
+}
+
+.note-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #8b4513;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.note-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #5d3a1a;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-handle {
+  background: #d48a1a !important;
 }
 
 .node-title {
@@ -249,6 +288,26 @@ body {
   background: #fff4f7 !important;
   color: #8f2646 !important;
   cursor: pointer;
+}
+
+.tool-btn-note {
+  background: #fff3e0 !important;
+  border-color: #f5c17b !important;
+  color: #8b4513 !important;
+}
+
+.note-textarea {
+  width: 100%;
+  min-height: 100px;
+  border-radius: 10px;
+  border: 1px solid #d3ddee;
+  background: #fff;
+  color: #132343;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .hidden-input {

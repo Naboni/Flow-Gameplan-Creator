@@ -30,7 +30,7 @@ import { toPng } from "html-to-image";
 
 type CanvasMode = "viewer" | "builder";
 type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
-type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter";
+type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note";
 
 /* ── extended node data: includes the raw FlowNode for the details panel ── */
 type AppNodeData = {
@@ -74,6 +74,7 @@ function nodeSubtitle(node: FlowNode): string {
   if (node.type === "wait") return `${node.duration.value} ${node.duration.unit}`;
   if (node.type === "split") return node.condition;
   if (node.type === "trigger") return node.event;
+  if (node.type === "note") return node.body;
   return node.type;
 }
 
@@ -94,6 +95,7 @@ function createFlowNode(kind: NodeKind): FlowNode {
   if (kind === "wait") return { id, type: "wait", duration: { value: 1, unit: "days" } };
   if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: { yes: "Yes", no: "No" } };
   if (kind === "profileFilter") return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
+  if (kind === "note") return { id, type: "note", title: "OBJECTIVE/FOCUS:", body: "Describe the objective here..." };
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
@@ -114,9 +116,19 @@ function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<
 
 /* ── custom node component ── */
 function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
+  if (data.nodeType === "note") {
+    return (
+      <div className={`canvas-node canvas-node-note ${selected ? "selected" : ""}`}>
+        <div className="note-title">{data.title}</div>
+        <div className="note-body">{data.subtitle}</div>
+        <Handle type="source" position={Position.Right} className="node-handle note-handle" />
+      </div>
+    );
+  }
   return (
     <div className={`canvas-node canvas-node-${data.nodeType} ${selected ? "selected" : ""}`}>
       <Handle type="target" position={Position.Top} className="node-handle" />
+      <Handle type="target" position={Position.Left} id="left" className="node-handle" />
       <div className="node-title">{data.title}</div>
       <div className="node-subtitle">{data.subtitle}</div>
       <Handle type="source" position={Position.Bottom} className="node-handle" />
@@ -464,20 +476,24 @@ export default function App() {
             <div className="sidebar-section">
               <label>Builder tools</label>
               <div className="tool-grid">
-                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter"] as NodeKind[]).map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("application/flow-node-kind", kind);
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onClick={() => appendBuilderNode(kind)}
-                  >
-                    + {kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1)}
-                  </button>
-                ))}
+                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"] as NodeKind[]).map((kind) => {
+                  const label = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/flow-node-kind", kind);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onClick={() => appendBuilderNode(kind)}
+                      className={kind === "note" ? "tool-btn-note" : undefined}
+                    >
+                      + {label}
+                    </button>
+                  );
+                })}
               </div>
               <button type="button" className="reset-btn" onClick={resetBuilderFlow}>Reset builder</button>
               <small className="hint">Drag a tool onto canvas or click to append.</small>
@@ -531,7 +547,7 @@ export default function App() {
                 if (mode !== "builder" || !reactFlowRef.current) return;
                 event.preventDefault();
                 const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter"];
+                const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"];
                 if (!allowed.includes(rawKind as NodeKind)) return;
                 const position = reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY });
                 appendBuilderNode(rawKind as NodeKind, position);
@@ -602,6 +618,24 @@ export default function App() {
                       if (mode !== "builder") return;
                       updateBuilderNodeData(selectedFlowNode.id, (fn) =>
                         fn.type === "split" ? { ...fn, condition: e.target.value } : fn
+                      );
+                    }}
+                  />
+                </label>
+              ) : null}
+
+              {"body" in selectedFlowNode ? (
+                <label>
+                  Body
+                  <textarea
+                    className="note-textarea"
+                    value={selectedFlowNode.body}
+                    disabled={mode !== "builder"}
+                    rows={6}
+                    onChange={(e) => {
+                      if (mode !== "builder") return;
+                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
+                        fn.type === "note" ? { ...fn, body: e.target.value } : fn
                       );
                     }}
                   />
