@@ -10,6 +10,8 @@
     "test:miro": "npm --prefix ./libs/miro test",
     "test:all": "npm run test:core && npm run test:layout && npm run test:miro",
     "dev:web": "npm --prefix ./apps/web run dev",
-    "build:web": "npm --prefix ./apps/web run build"
+    "dev:api": "npm --prefix ./apps/api run dev",
+    "build:web": "npm --prefix ./apps/web run build",
+    "build:api": "npm --prefix ./apps/api run build"
   }
 }
