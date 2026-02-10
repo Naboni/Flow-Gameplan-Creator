@@ -1,0 +1,17 @@
+{
+  "name": "@flow/layout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@flow/core": "file:../core"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.8"
+  }
+}
