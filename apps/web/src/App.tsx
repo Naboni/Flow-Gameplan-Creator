@@ -6,6 +6,7 @@ import {
   type FlowSpec
 } from "@flow/core";
 import { buildLayout } from "@flow/layout";
+import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
 
 type TemplateChoice =
@@ -57,6 +58,9 @@ export default function App() {
   const [customSpec, setCustomSpec] = useState<FlowSpec | null>(null);
   const [notice, setNotice] = useState<string>("");
   const [busyExport, setBusyExport] = useState(false);
+  const [busyMiroExport, setBusyMiroExport] = useState(false);
+  const [miroBoardId, setMiroBoardId] = useState("");
+  const [miroToken, setMiroToken] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
@@ -136,6 +140,34 @@ export default function App() {
     }
   }
 
+  async function handleExportMiro() {
+    if (!miroBoardId.trim() || !miroToken.trim()) {
+      setNotice("Enter Miro board ID and access token first.");
+      return;
+    }
+
+    setBusyMiroExport(true);
+    try {
+      const result = await exportFlowToMiro({
+        boardId: miroBoardId.trim(),
+        accessToken: miroToken.trim(),
+        flowSpec: spec
+      });
+      setNotice(
+        `Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`
+      );
+    } catch (error) {
+      if (typeof error === "object" && error && "status" in error) {
+        const status = String((error as { status: number }).status);
+        setNotice(`Miro export failed (status ${status}). Check token/board access.`);
+      } else {
+        setNotice("Miro export failed.");
+      }
+    } finally {
+      setBusyMiroExport(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="top-bar">
@@ -182,6 +214,23 @@ export default function App() {
               className="hidden-input"
               onChange={handleImportJson}
             />
+          </div>
+          <div className="miro-actions">
+            <input
+              type="text"
+              placeholder="Miro board ID"
+              value={miroBoardId}
+              onChange={(event) => setMiroBoardId(event.target.value)}
+            />
+            <input
+              type="password"
+              placeholder="Miro access token"
+              value={miroToken}
+              onChange={(event) => setMiroToken(event.target.value)}
+            />
+            <button type="button" onClick={handleExportMiro} disabled={busyMiroExport}>
+              {busyMiroExport ? "Exporting..." : "Export to Miro"}
+            </button>
           </div>
         </div>
       </header>

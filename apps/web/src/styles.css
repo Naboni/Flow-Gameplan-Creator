@@ -41,6 +41,7 @@ body {
   display: flex;
   gap: 14px;
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .controls label {
@@ -69,6 +70,36 @@ input[type="range"] {
   color: #e8ecf8;
   padding: 0 12px;
   cursor: pointer;
+}
+
+.miro-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.miro-actions input {
+  height: 36px;
+  width: 190px;
+  border-radius: 8px;
+  border: 1px solid #3f4b74;
+  background: #131b31;
+  color: #e8ecf8;
+  padding: 0 10px;
+}
+
+.miro-actions button {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #3f4b74;
+  background: #1b2748;
+  color: #e8ecf8;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.miro-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .actions button:disabled {
