@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "cd ../../libs/core && npm install && cd ../layout && npm install && cd ../miro && npm install",
     "build": "vite build",
     "preview": "vite preview"
   },
