@@ -45,4 +45,15 @@ describe("buildLayout", () => {
       }
     }
   });
+
+  it("respects explicit position overrides", () => {
+    const layout = buildLayout(welcomeSeriesFixture, {
+      positionOverrides: {
+        email_1: { x: 40, y: 60 }
+      }
+    });
+    const node = layout.nodes.find((entry) => entry.id === "email_1");
+    expect(node?.x).toBe(40);
+    expect(node?.y).toBe(60);
+  });
 });

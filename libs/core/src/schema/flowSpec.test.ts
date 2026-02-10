@@ -34,6 +34,19 @@ describe("flowSpec schema", () => {
     const result = parseFlowSpecSafe(invalid);
     expect(result.success).toBe(false);
   });
+
+  it("accepts ui position overrides for known nodes", () => {
+    const valid = {
+      ...welcomeSeriesFixture,
+      ui: {
+        nodePositions: {
+          trigger_signup: { x: 100, y: 120 }
+        }
+      }
+    };
+    const result = parseFlowSpecSafe(valid);
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("formatDelay", () => {
