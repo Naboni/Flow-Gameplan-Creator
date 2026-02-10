@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Component, useCallback, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import ReactFlow, {
   addEdge as rfAddEdge,
   applyEdgeChanges,
@@ -20,6 +20,7 @@ import ReactFlow, {
 import {
   expandPackageTemplate,
   parseFlowSpec,
+  parseFlowSpecSafe,
   welcomeSeriesFixture,
   type FlowNode,
   type FlowSpec
@@ -143,9 +144,39 @@ function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<
 
 function specToRfNodes(spec: FlowSpec): Node<AppNodeData>[] {
   const positions = spec.ui?.nodePositions ?? {};
-  return spec.nodes.map((fn, i) =>
-    toRfNode(fn, positions[fn.id] ?? { x: 120 + (i % 3) * 280, y: 80 + Math.floor(i / 3) * 180 })
-  );
+
+  // Separate notes from main nodes for vertical layout
+  const mainNodes = spec.nodes.filter((n) => n.type !== "note");
+  const noteNodes = spec.nodes.filter((n) => n.type === "note");
+
+  // Build note→target map from edges
+  const noteIds = new Set(noteNodes.map((n) => n.id));
+  const noteTargetMap = new Map<string, string>();
+  for (const edge of spec.edges) {
+    if (noteIds.has(edge.from)) noteTargetMap.set(edge.from, edge.to);
+  }
+
+  // Position main nodes vertically (one per row)
+  const result: Node<AppNodeData>[] = [];
+  const mainPositions = new Map<string, { x: number; y: number }>();
+  for (let i = 0; i < mainNodes.length; i++) {
+    const fn = mainNodes[i];
+    const pos = positions[fn.id] ?? { x: 300, y: 80 + i * 160 };
+    mainPositions.set(fn.id, pos);
+    result.push(toRfNode(fn, pos));
+  }
+
+  // Position notes to the left of their target
+  for (const note of noteNodes) {
+    const targetId = noteTargetMap.get(note.id);
+    const targetPos = targetId ? mainPositions.get(targetId) : undefined;
+    const pos = positions[note.id] ?? (targetPos
+      ? { x: targetPos.x - 380, y: targetPos.y }
+      : { x: -80, y: 80 + result.length * 160 });
+    result.push(toRfNode(note, pos));
+  }
+
+  return result;
 }
 
 function specToRfEdges(spec: FlowSpec): Edge[] {
@@ -201,11 +232,33 @@ function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   );
 }
 
+/* ── error boundary ── */
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error) { console.error("React error boundary caught:", error); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <h2>Something went wrong</h2>
+          <p style={{ color: "#c0392b" }}>{this.state.error.message}</p>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: "8px 20px", cursor: "pointer" }}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ═══════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════ */
 
-export default function App() {
+function AppInner() {
   const [tab, setTab] = useState<AppTab>("generate");
 
   /* ── generate tab state ── */
@@ -244,18 +297,26 @@ export default function App() {
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
 
   /* ── active spec for viewer/generate tabs ── */
-  const viewerSpec = useMemo(() => {
+  const activeGenFlow = useMemo(() => {
     if (tab === "generate" && genResult && genResult.flows.length > 0) {
       return genResult.flows[activeFlowIndex] ?? genResult.flows[0];
     }
+    return null;
+  }, [tab, genResult, activeFlowIndex]);
+
+  const viewerSpec = useMemo(() => {
     if (viewerChoice === "custom" && customViewerSpec) return customViewerSpec;
     return getSpecFromChoice(viewerChoice);
-  }, [tab, genResult, activeFlowIndex, viewerChoice, customViewerSpec]);
+  }, [viewerChoice, customViewerSpec]);
 
-  const viewerLayout = useMemo(
-    () => buildLayout(viewerSpec, { positionOverrides: viewerSpec.ui?.nodePositions ?? {} }),
-    [viewerSpec]
-  );
+  const viewerLayout = useMemo(() => {
+    try {
+      return buildLayout(viewerSpec, { positionOverrides: viewerSpec.ui?.nodePositions ?? {} });
+    } catch (err) {
+      console.error("buildLayout failed:", err);
+      return { nodes: [], edges: [] };
+    }
+  }, [viewerSpec]);
 
   const viewerNodes = useMemo<Node<AppNodeData>[]>(
     () => viewerLayout.nodes.map((ln) => {
@@ -274,10 +335,34 @@ export default function App() {
     [viewerSpec.edges]
   );
 
+  /* ── generated flow: try layout, fall back to grid ── */
+  const genNodes = useMemo<Node<AppNodeData>[]>(() => {
+    if (!activeGenFlow) return [];
+    try {
+      const layout = buildLayout(activeGenFlow as FlowSpec, {});
+      return layout.nodes.map((ln) => {
+        const raw = activeGenFlow.nodes.find((n: any) => n.id === ln.id);
+        const flowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
+        return {
+          id: ln.id, type: "flowNode", position: { x: ln.x, y: ln.y }, draggable: false,
+          data: { title: ln.title, subtitle: raw ? nodeSubtitle(raw as FlowNode) : ln.type, nodeType: ln.type, flowNode: flowNode as FlowNode }
+        };
+      });
+    } catch (err) {
+      console.error("Layout failed for generated flow, using grid:", err);
+      return specToRfNodes(activeGenFlow as FlowSpec);
+    }
+  }, [activeGenFlow]);
+
+  const genEdges = useMemo<Edge[]>(() => {
+    if (!activeGenFlow) return [];
+    return specToRfEdges(activeGenFlow as FlowSpec);
+  }, [activeGenFlow]);
+
   /* ── pick active nodes/edges based on tab ── */
   const isEditorActive = tab === "editor";
-  const flowNodes = isEditorActive ? editorNodes : viewerNodes;
-  const flowEdges = isEditorActive ? editorEdges : viewerEdges;
+  const flowNodes = isEditorActive ? editorNodes : (tab === "generate" && activeGenFlow ? genNodes : viewerNodes);
+  const flowEdges = isEditorActive ? editorEdges : (tab === "generate" && activeGenFlow ? genEdges : viewerEdges);
 
   /* ── selected element lookup ── */
   const selectedFlowNode: FlowNode | null = useMemo(() => {
@@ -396,6 +481,19 @@ export default function App() {
       }
       const result = (await generateRes.json()) as GeneratedResult;
 
+      console.log("Generation result:", result);
+      console.log("First flow:", result.flows?.[0]);
+
+      if (!result.flows || result.flows.length === 0) {
+        throw new Error("No flows were generated.");
+      }
+
+      // Ensure each flow has required arrays
+      for (const flow of result.flows) {
+        if (!Array.isArray(flow.nodes)) flow.nodes = [];
+        if (!Array.isArray(flow.edges)) flow.edges = [];
+      }
+
       setGenResult(result);
       setActiveFlowIndex(0);
       setGenStep("done");
@@ -410,6 +508,7 @@ export default function App() {
   /* ── export ── */
   function getExportSpec(): FlowSpec {
     if (isEditorActive) return editorToFlowSpec(editorNodes, editorEdges);
+    if (tab === "generate" && activeGenFlow) return activeGenFlow as FlowSpec;
     return viewerSpec;
   }
 
@@ -447,17 +546,39 @@ export default function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      const parsed = parseFlowSpec(JSON.parse(text));
-      if (isEditorActive) {
-        setEditorNodes(specToRfNodes(parsed));
-        setEditorEdges(specToRfEdges(parsed));
+      const raw = JSON.parse(text);
+
+      // Handle array of flows (from "Export All")
+      const single = Array.isArray(raw) ? raw[0] : raw;
+      if (!single || !Array.isArray(single.nodes) || !Array.isArray(single.edges)) {
+        setNotice("Invalid flow JSON — missing nodes or edges.");
+        return;
+      }
+
+      // Try strict parse first, fall back to raw data
+      let spec: FlowSpec;
+      const result = parseFlowSpecSafe(single);
+      if (result.success) {
+        spec = result.data;
       } else {
-        setCustomViewerSpec(parsed);
+        console.warn("Strict parse failed, using raw data:", result.error.issues);
+        // Use raw data directly (generated flows may have extra fields)
+        spec = single as FlowSpec;
+      }
+
+      if (isEditorActive) {
+        setEditorNodes(specToRfNodes(spec));
+        setEditorEdges(specToRfEdges(spec));
+      } else {
+        setCustomViewerSpec(spec);
         setViewerChoice("custom");
       }
       setSelectedNodeId(null); setSelectedEdgeId(null);
-      setNotice("Imported JSON.");
-    } catch { setNotice("Invalid JSON or flow schema."); }
+      setNotice(Array.isArray(raw) ? `Imported first of ${raw.length} flows.` : "Imported JSON.");
+    } catch (err) {
+      console.error("Import failed:", err);
+      setNotice("Invalid JSON file.");
+    }
     finally { event.target.value = ""; }
   }
 
@@ -645,6 +766,7 @@ export default function App() {
               </div>
             ) : (
               <ReactFlow
+                key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : tab}
                 onInit={(inst) => { reactFlowRef.current = inst; }}
                 nodes={flowNodes}
                 edges={flowEdges}
@@ -745,5 +867,13 @@ export default function App() {
         </aside>
       </div>
     </ReactFlowProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }

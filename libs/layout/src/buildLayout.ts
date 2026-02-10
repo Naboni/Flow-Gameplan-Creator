@@ -107,16 +107,44 @@ export function buildLayout(
     return { nodes: [], edges: [] };
   }
 
+  /* ── Separate note nodes from main flow nodes ── */
+  const noteNodes: FlowNode[] = [];
+  const mainNodes: FlowNode[] = [];
+  const noteIds = new Set<string>();
+
+  for (const node of spec.nodes) {
+    if (node.type === "note") {
+      noteNodes.push(node);
+      noteIds.add(node.id);
+    } else {
+      mainNodes.push(node);
+    }
+  }
+
+  // Build note→target map: for each note, find the node it connects TO
+  const noteTargetMap = new Map<string, string>();
+  const mainEdges: FlowEdge[] = [];
+
+  for (const edge of spec.edges) {
+    if (noteIds.has(edge.from)) {
+      // This is a note→target edge; record the mapping but exclude from main layout
+      noteTargetMap.set(edge.from, edge.to);
+    } else {
+      mainEdges.push(edge);
+    }
+  }
+
+  /* ── Build adjacency only from main (non-note) edges ── */
   const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
   const outgoingByNode = new Map<string, FlowEdge[]>();
   const incomingCount = new Map<string, number>();
 
-  for (const node of spec.nodes) {
+  for (const node of mainNodes) {
     outgoingByNode.set(node.id, []);
     incomingCount.set(node.id, 0);
   }
 
-  for (const edge of spec.edges) {
+  for (const edge of mainEdges) {
     const outgoing = outgoingByNode.get(edge.from);
     if (outgoing) {
       outgoing.push(edge);
@@ -124,8 +152,9 @@ export function buildLayout(
     incomingCount.set(edge.to, (incomingCount.get(edge.to) ?? 0) + 1);
   }
 
-  const triggerNode = spec.nodes.find((node) => node.type === "trigger");
-  const zeroInDegree = spec.nodes
+  /* ── Topological sort (main nodes only) ── */
+  const triggerNode = mainNodes.find((node) => node.type === "trigger");
+  const zeroInDegree = mainNodes
     .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
     .sort((a, b) => {
       if (triggerNode && a.id === triggerNode.id) {
@@ -172,12 +201,13 @@ export function buildLayout(
     }
   }
 
-  for (const node of spec.nodes) {
+  for (const node of mainNodes) {
     if (!topoOrder.some((n) => n.id === node.id)) {
       topoOrder.push(node);
     }
   }
 
+  /* ── Depth & lane assignment (main nodes only) ── */
   const depthById = new Map<string, number>();
   const laneCandidatesById = new Map<string, number[]>();
 
@@ -233,8 +263,9 @@ export function buildLayout(
     laneById.set(nodeId, Math.round(average));
   }
 
+  /* ── Position main nodes ── */
   const nodesByDepth = new Map<number, FlowNode[]>();
-  for (const node of spec.nodes) {
+  for (const node of mainNodes) {
     const depth = depthById.get(node.id) ?? 0;
     const existing = nodesByDepth.get(depth) ?? [];
     existing.push(node);
@@ -279,6 +310,48 @@ export function buildLayout(
     }
   }
 
+  /* ── Position note nodes: place to the left of their target ── */
+  const positionedById = new Map(positionedNodes.map((n) => [n.id, n]));
+  const NOTE_LEFT_OFFSET = -380; // offset to the left of the target
+
+  for (const note of noteNodes) {
+    const targetId = noteTargetMap.get(note.id);
+    const targetPositioned = targetId ? positionedById.get(targetId) : undefined;
+    const size = NODE_SIZE_MAP.note;
+
+    if (targetPositioned) {
+      // Place note to the left of its target, same Y
+      positionedNodes.push({
+        id: note.id,
+        type: "note",
+        title: "title" in note ? note.title : "Note",
+        width: size.width,
+        height: size.height,
+        x: targetPositioned.x + NOTE_LEFT_OFFSET,
+        y: targetPositioned.y,
+        depth: targetPositioned.depth,
+        lane: targetPositioned.lane - 1
+      });
+    } else {
+      // Disconnected note: place below the last positioned node
+      const maxY = positionedNodes.length > 0
+        ? Math.max(...positionedNodes.map((n) => n.y)) + resolved.rowSpacing
+        : 0;
+      positionedNodes.push({
+        id: note.id,
+        type: "note",
+        title: "title" in note ? note.title : "Note",
+        width: size.width,
+        height: size.height,
+        x: 0,
+        y: maxY,
+        depth: 999,
+        lane: 0
+      });
+    }
+  }
+
+  /* ── Normalize positions ── */
   const minX = Math.min(...positionedNodes.map((node) => node.x));
   const minY = Math.min(...positionedNodes.map((node) => node.y));
 
@@ -297,6 +370,7 @@ export function buildLayout(
 
   const normalizedById = new Map(normalizedNodes.map((node) => [node.id, node]));
 
+  /* ── Route edges ── */
   const routedEdges: RoutedEdge[] = spec.edges.map((edge) => {
     const fromNode = normalizedById.get(edge.from);
     const toNode = normalizedById.get(edge.to);
@@ -310,6 +384,27 @@ export function buildLayout(
       };
     }
 
+    // Note edges: horizontal from right side of note to left side of target
+    const isNoteEdge = noteIds.has(edge.from);
+    if (isNoteEdge) {
+      const start: LayoutPoint = {
+        x: fromNode.x + fromNode.width,
+        y: fromNode.y + fromNode.height / 2
+      };
+      const end: LayoutPoint = {
+        x: toNode.x,
+        y: toNode.y + toNode.height / 2
+      };
+      return {
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+        label: edge.label,
+        points: [start, end]
+      };
+    }
+
+    // Normal edges: top-to-bottom
     const start: LayoutPoint = {
       x: fromNode.x + fromNode.width / 2,
       y: fromNode.y + fromNode.height

@@ -287,7 +287,12 @@ function assembleFlowSpec(
     edges.push({ id: nextEdgeId(), from: prevNo, to: noOutcome });
   }
 
-  // Add note nodes (not connected to the flow, just placed for context)
+  // Collect message step IDs to connect notes to them
+  const messageStepIds = nodes
+    .filter((n) => n.type === "message")
+    .map((n) => n.id);
+
+  // Add note nodes and connect each to its corresponding message step
   for (let i = 0; i < content.notes.length; i++) {
     const noteId = `${blueprint.flowId}_note_${i + 1}`;
     nodes.push({
@@ -296,6 +301,11 @@ function assembleFlowSpec(
       title: content.notes[i].title,
       body: content.notes[i].body
     });
+    // Connect note to the corresponding message step (note_1 → step_1, etc.)
+    const targetStepId = messageStepIds[i];
+    if (targetStepId) {
+      edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
+    }
   }
 
   return {
