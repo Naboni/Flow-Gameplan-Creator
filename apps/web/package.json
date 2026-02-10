@@ -9,8 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@flow/core": "file:../../packages/core",
-    "@flow/layout": "file:../../packages/layout",
+    "@flow/core": "file:../../libs/core",
+    "@flow/layout": "file:../../libs/layout",
+    "flow-gameplan-creator": "file:../..",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

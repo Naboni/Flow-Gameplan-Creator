@@ -4,11 +4,19 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "test": "vitest run"
   },
   "dependencies": {
-    "@flow/core": "file:../core"
+    "@flow/core": "file:../core",
+    "flow-gameplan-creator": "file:../.."
   },
   "devDependencies": {
     "typescript": "^5.9.2",

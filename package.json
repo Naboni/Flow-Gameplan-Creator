@@ -5,8 +5,8 @@
   "description": "Flow Gameplan Creator workspace",
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "test:core": "npm --prefix ./packages/core test",
-    "test:layout": "npm --prefix ./packages/layout test",
+    "test:core": "npm --prefix ./libs/core test",
+    "test:layout": "npm --prefix ./libs/layout test",
     "dev:web": "npm --prefix ./apps/web run dev",
     "build:web": "npm --prefix ./apps/web run build"
   }
