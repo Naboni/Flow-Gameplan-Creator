@@ -37,9 +37,10 @@ export type LayoutOptions = {
   sameLaneOffset?: number;
   paddingX?: number;
   paddingY?: number;
+  positionOverrides?: Record<string, { x: number; y: number }>;
 };
 
-const DEFAULT_LAYOUT_OPTIONS: Required<LayoutOptions> = {
+const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides"> = {
   rowSpacing: 220,
   laneSpacing: 420,
   sameLaneOffset: 340,
@@ -275,11 +276,18 @@ export function buildLayout(
   const minX = Math.min(...positionedNodes.map((node) => node.x));
   const minY = Math.min(...positionedNodes.map((node) => node.y));
 
-  const normalizedNodes = positionedNodes.map((node) => ({
-    ...node,
-    x: node.x - minX + resolved.paddingX,
-    y: node.y - minY + resolved.paddingY
-  }));
+  const normalizedNodes = positionedNodes.map((node) => {
+    const defaultPosition = {
+      x: node.x - minX + resolved.paddingX,
+      y: node.y - minY + resolved.paddingY
+    };
+    const override = resolved.positionOverrides?.[node.id];
+    return {
+      ...node,
+      x: override?.x ?? defaultPosition.x,
+      y: override?.y ?? defaultPosition.y
+    };
+  });
 
   const normalizedById = new Map(normalizedNodes.map((node) => [node.id, node]));
 

@@ -126,6 +126,15 @@ export const flowSpecSchema = z.object({
       unit: delayUnitSchema.default("days")
     }).default({ value: 2, unit: "days" })
   }).default({ delay: { value: 2, unit: "days" } }),
+  ui: z.object({
+    nodePositions: z.record(
+      nodeIdSchema,
+      z.object({
+        x: z.number(),
+        y: z.number()
+      })
+    ).optional()
+  }).optional(),
   nodes: z.array(flowNodeSchema).min(2),
   edges: z.array(flowEdgeSchema).min(1)
 }).superRefine((spec, ctx) => {
@@ -205,6 +214,18 @@ export const flowSpecSchema = z.object({
         message: `Edge ${edge.id} references missing destination node ${edge.to}.`,
         path: ["edges"]
       });
+    }
+  }
+
+  if (spec.ui?.nodePositions) {
+    for (const nodeId of Object.keys(spec.ui.nodePositions)) {
+      if (!nodeIdSet.has(nodeId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `ui.nodePositions contains unknown node id ${nodeId}.`,
+          path: ["ui", "nodePositions"]
+        });
+      }
     }
   }
 });

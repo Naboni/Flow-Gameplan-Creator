@@ -18,6 +18,7 @@ export type ExportFlowToMiroOptions = {
   flowSpec: FlowSpec;
   originX?: number;
   originY?: number;
+  positionOverrides?: Record<string, { x: number; y: number }>;
   fetchImpl?: FetchLike;
   maxRetries?: number;
 };
@@ -114,10 +115,11 @@ export async function exportFlowToMiro({
   flowSpec,
   originX = 0,
   originY = 0,
+  positionOverrides,
   fetchImpl = fetch,
   maxRetries = 3
 }: ExportFlowToMiroOptions): Promise<ExportFlowToMiroResult> {
-  const layout = buildLayout(flowSpec);
+  const layout = buildLayout(flowSpec, { positionOverrides });
   const nodeById = new Map(flowSpec.nodes.map((node) => [node.id, node]));
   const itemMap: Record<string, string> = {};
 
