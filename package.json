@@ -1,0 +1,10 @@
+{
+  "name": "flow-gameplan-creator",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Flow Gameplan Creator workspace",
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "test:core": "npm --prefix ./packages/core test"
+  }
+}
