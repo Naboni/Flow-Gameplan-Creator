@@ -1,5 +1,8 @@
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
 import ReactFlow, {
+  addEdge as rfAddEdge,
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   Controls,
   Handle,
@@ -27,14 +30,21 @@ import { toPng } from "html-to-image";
 
 type CanvasMode = "viewer" | "builder";
 type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
-type PositionMap = Record<string, { x: number; y: number }>;
-type NodeKind = "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter";
+type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter";
 
+/* ── extended node data: includes the raw FlowNode for the details panel ── */
 type AppNodeData = {
   title: string;
   subtitle: string;
   nodeType: FlowNode["type"];
+  flowNode: FlowNode;
 };
+
+const EDGE_STYLE = {
+  markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
+  style: { stroke: "#6f7b91", strokeWidth: 2 },
+  labelStyle: { fill: "#51607d", fontWeight: 700, fontSize: 12 }
+} as const;
 
 const CHOICES: Array<{ label: string; value: TemplateChoice }> = [
   { label: "Welcome Series (test case)", value: "welcome-series" },
@@ -43,19 +53,6 @@ const CHOICES: Array<{ label: string; value: TemplateChoice }> = [
   { label: "Full System", value: "full-system" },
   { label: "Custom (imported)", value: "custom" }
 ];
-
-const BUILDER_BASE_SPEC: FlowSpec = parseFlowSpec({
-  id: "builder_flow",
-  name: "Custom Builder Flow",
-  source: { mode: "manual" },
-  channels: ["email"],
-  defaults: { delay: { value: 2, unit: "days" } },
-  nodes: [
-    { id: "builder_trigger", type: "trigger", title: "Trigger", event: "Define your trigger" },
-    { id: "builder_outcome", type: "outcome", title: "Outcome", result: "Define your outcome" }
-  ],
-  edges: [{ id: "builder_edge_1", from: "builder_trigger", to: "builder_outcome" }]
-});
 
 function getSpecFromChoice(choice: TemplateChoice): FlowSpec {
   if (choice === "welcome-series" || choice === "custom") {
@@ -73,48 +70,11 @@ function sanitizeId(input: string): string {
 }
 
 function nodeSubtitle(node: FlowNode): string {
-  if (node.type === "message") {
-    return node.channel.toUpperCase();
-  }
-  if (node.type === "wait") {
-    return `${node.duration.value} ${node.duration.unit}`;
-  }
-  if (node.type === "split") {
-    return node.condition;
-  }
-  if (node.type === "trigger") {
-    return node.event;
-  }
+  if (node.type === "message") return node.channel.toUpperCase();
+  if (node.type === "wait") return `${node.duration.value} ${node.duration.unit}`;
+  if (node.type === "split") return node.condition;
+  if (node.type === "trigger") return node.event;
   return node.type;
-}
-
-function ensureChannels(spec: FlowSpec, node: FlowNode): FlowSpec {
-  if (node.type !== "message" || spec.channels.includes(node.channel)) {
-    return spec;
-  }
-  return { ...spec, channels: [...spec.channels, node.channel] };
-}
-
-function nextEdgeId(spec: FlowSpec): string {
-  const existing = new Set(spec.edges.map((entry) => entry.id));
-  let i = 1;
-  while (existing.has(`edge_${i}`)) {
-    i += 1;
-  }
-  return `edge_${i}`;
-}
-
-function buildExportSpec(spec: FlowSpec, positions: PositionMap): FlowSpec {
-  if (Object.keys(positions).length === 0) {
-    return spec;
-  }
-  return {
-    ...spec,
-    ui: {
-      ...(spec.ui ?? {}),
-      nodePositions: positions
-    }
-  };
 }
 
 function downloadBlob(content: Blob, filename: string) {
@@ -126,32 +86,33 @@ function downloadBlob(content: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function createNodeFromKind(kind: NodeKind): FlowNode {
+function createFlowNode(kind: NodeKind): FlowNode {
   const id = sanitizeId(`${kind}_${Date.now()}`);
-  if (kind === "email") {
-    return { id, type: "message", channel: "email", title: "Email" };
-  }
-  if (kind === "sms") {
-    return { id, type: "message", channel: "sms", title: "SMS" };
-  }
-  if (kind === "wait") {
-    return { id, type: "wait", duration: { value: 1, unit: "days" } };
-  }
-  if (kind === "split") {
-    return {
-      id,
-      type: "split",
-      title: "Conditional Split",
-      condition: "Condition",
-      labels: { yes: "Yes", no: "No" }
-    };
-  }
-  if (kind === "profileFilter") {
-    return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
-  }
+  if (kind === "trigger") return { id, type: "trigger", title: "Trigger", event: "Define your trigger" };
+  if (kind === "email") return { id, type: "message", channel: "email", title: "Email" };
+  if (kind === "sms") return { id, type: "message", channel: "sms", title: "SMS" };
+  if (kind === "wait") return { id, type: "wait", duration: { value: 1, unit: "days" } };
+  if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: { yes: "Yes", no: "No" } };
+  if (kind === "profileFilter") return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
+/** Convert a FlowNode into a ReactFlow Node */
+function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<AppNodeData> {
+  return {
+    id: flowNode.id,
+    type: "flowNode",
+    position,
+    data: {
+      title: "title" in flowNode ? flowNode.title : flowNode.type,
+      subtitle: nodeSubtitle(flowNode),
+      nodeType: flowNode.type,
+      flowNode
+    }
+  };
+}
+
+/* ── custom node component ── */
 function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   return (
     <div className={`canvas-node canvas-node-${data.nodeType} ${selected ? "selected" : ""}`}>
@@ -163,12 +124,49 @@ function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   );
 }
 
+/* ── helpers to reconstruct FlowSpec from builder RF state (for export) ── */
+function builderToFlowSpec(
+  rfNodes: Node<AppNodeData>[],
+  rfEdges: Edge[]
+): FlowSpec {
+  const channels = new Set<"email" | "sms">(["email"]);
+  const flowNodes: FlowNode[] = rfNodes.map((n) => {
+    const fn = n.data.flowNode;
+    if (fn.type === "message") channels.add(fn.channel);
+    return fn;
+  });
+  const flowEdges = rfEdges.map((e) => ({
+    id: e.id,
+    from: e.source,
+    to: e.target,
+    ...(typeof e.label === "string" && e.label ? { label: e.label } : {})
+  }));
+  const positions: Record<string, { x: number; y: number }> = {};
+  for (const n of rfNodes) {
+    positions[n.id] = n.position;
+  }
+  return {
+    id: "builder_flow",
+    name: "Custom Builder Flow",
+    source: { mode: "manual" },
+    channels: [...channels],
+    defaults: { delay: { value: 2, unit: "days" } },
+    nodes: flowNodes,
+    edges: flowEdges,
+    ui: { nodePositions: positions }
+  } as FlowSpec;
+}
+
+/* ── main app ── */
 export default function App() {
   const [mode, setMode] = useState<CanvasMode>("viewer");
   const [choice, setChoice] = useState<TemplateChoice>("welcome-series");
   const [customViewerSpec, setCustomViewerSpec] = useState<FlowSpec | null>(null);
-  const [builderSpec, setBuilderSpec] = useState<FlowSpec>(BUILDER_BASE_SPEC);
-  const [builderPositions, setBuilderPositions] = useState<PositionMap>({});
+
+  /* Builder state: ReactFlow owns the arrays directly, just like CartPanda */
+  const [builderNodes, setBuilderNodes] = useState<Node<AppNodeData>[]>([]);
+  const [builderEdges, setBuilderEdges] = useState<Edge[]>([]);
+
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -180,183 +178,189 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
   const reactFlowRef = useRef<{
-    screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number };
+    screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
   } | null>(null);
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
 
+  /* ── viewer derived state ── */
   const viewerSpec = useMemo(() => {
-    if (choice === "custom" && customViewerSpec) {
-      return customViewerSpec;
-    }
+    if (choice === "custom" && customViewerSpec) return customViewerSpec;
     return getSpecFromChoice(choice);
   }, [choice, customViewerSpec]);
 
-  const activeSpec = mode === "viewer" ? viewerSpec : builderSpec;
-  const activePositions = mode === "builder" ? builderPositions : (activeSpec.ui?.nodePositions ?? {});
-  const layout = useMemo(
-    () => buildLayout(activeSpec, { positionOverrides: activePositions }),
-    [activeSpec, activePositions]
+  const viewerLayout = useMemo(
+    () => buildLayout(viewerSpec, { positionOverrides: viewerSpec.ui?.nodePositions ?? {} }),
+    [viewerSpec]
   );
 
-  const flowNodes = useMemo<Node<AppNodeData>[]>(
+  const viewerNodes = useMemo<Node<AppNodeData>[]>(
     () =>
-      layout.nodes.map((node) => {
-        const raw = activeSpec.nodes.find((entry) => entry.id === node.id);
+      viewerLayout.nodes.map((ln) => {
+        const raw = viewerSpec.nodes.find((n) => n.id === ln.id);
+        const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
         return {
-          id: node.id,
+          id: ln.id,
           type: "flowNode",
-          position: { x: node.x, y: node.y },
+          position: { x: ln.x, y: ln.y },
+          draggable: false,
           data: {
-            title: node.title,
-            subtitle: raw ? nodeSubtitle(raw) : node.type,
-            nodeType: node.type
-          },
-          draggable: mode === "builder"
+            title: ln.title,
+            subtitle: raw ? nodeSubtitle(raw) : ln.type,
+            nodeType: ln.type,
+            flowNode
+          }
         };
       }),
-    [layout.nodes, activeSpec.nodes, mode]
+    [viewerLayout.nodes, viewerSpec.nodes]
   );
 
-  const flowEdges = useMemo<Edge[]>(
+  const viewerEdges = useMemo<Edge[]>(
     () =>
-      activeSpec.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.from,
-        target: edge.to,
-        label: edge.label,
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
-        style: { stroke: "#6f7b91", strokeWidth: 2 },
-        labelStyle: { fill: "#51607d", fontWeight: 700, fontSize: 12 }
+      viewerSpec.edges.map((e) => ({
+        id: e.id,
+        source: e.from,
+        target: e.to,
+        label: e.label,
+        ...EDGE_STYLE
       })),
-    [activeSpec.edges]
+    [viewerSpec.edges]
   );
 
-  const selectedNode = selectedNodeId
-    ? activeSpec.nodes.find((node) => node.id === selectedNodeId) ?? null
-    : null;
-  const selectedEdge = selectedEdgeId
-    ? activeSpec.edges.find((edge) => edge.id === selectedEdgeId) ?? null
-    : null;
+  /* ── pick active arrays ── */
+  const flowNodes = mode === "viewer" ? viewerNodes : builderNodes;
+  const flowEdges = mode === "viewer" ? viewerEdges : builderEdges;
 
+  /* ── selected element lookup (works for both modes) ── */
+  const selectedFlowNode: FlowNode | null = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const rfNode = flowNodes.find((n) => n.id === selectedNodeId);
+    return rfNode?.data.flowNode ?? null;
+  }, [selectedNodeId, flowNodes]);
+
+  const selectedEdge = useMemo(() => {
+    if (!selectedEdgeId) return null;
+    const rfEdge = flowEdges.find((e) => e.id === selectedEdgeId);
+    if (!rfEdge) return null;
+    return { id: rfEdge.id, label: typeof rfEdge.label === "string" ? rfEdge.label : undefined };
+  }, [selectedEdgeId, flowEdges]);
+
+  /* ── builder: node changes (drag, select, remove) – mirrors CartPanda ── */
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      if (mode !== "builder") return;
+      setBuilderNodes((nds) => applyNodeChanges(changes, nds));
+    },
+    [mode]
+  );
+
+  /* ── builder: edge changes (remove) ── */
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (mode !== "builder") return;
+      setBuilderEdges((eds) => applyEdgeChanges(changes, eds));
+    },
+    [mode]
+  );
+
+  /* ── builder: connect two nodes ── */
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (mode !== "builder" || !connection.source || !connection.target) return;
+      setBuilderEdges((eds) =>
+        rfAddEdge(
+          {
+            ...connection,
+            ...EDGE_STYLE
+          },
+          eds
+        )
+      );
+      setNotice("Connected nodes.");
+    },
+    [mode]
+  );
+
+  /* ── builder: add node from sidebar ── */
   function appendBuilderNode(kind: NodeKind, position?: { x: number; y: number }) {
-    if (mode !== "builder") {
-      return;
-    }
-    const created = createNodeFromKind(kind);
-    const draft = { ...builderSpec };
-    draft.nodes = [...draft.nodes, created];
-    if (created.type === "message" && !draft.channels.includes(created.channel)) {
-      draft.channels = [...draft.channels, created.channel];
-    }
-    const nextPositions = { ...builderPositions };
-    if (position) {
-      nextPositions[created.id] = position;
-    }
-    setBuilderSpec(draft);
-    setBuilderPositions(nextPositions);
-    setSelectedNodeId(created.id);
+    if (mode !== "builder") return;
+    const flowNode = createFlowNode(kind);
+    const pos = position ?? { x: 200, y: 80 + builderNodes.length * 140 };
+    setBuilderNodes((nds) => [...nds, toRfNode(flowNode, pos)]);
+    setSelectedNodeId(flowNode.id);
     setNotice("Node added.");
   }
 
-  function handleNodesChange(changes: NodeChange[]) {
-    if (mode !== "builder") {
-      return;
-    }
-    const next = { ...builderPositions };
-    for (const change of changes) {
-      if (change.type === "position" && change.position) {
-        next[change.id] = change.position;
-      }
-    }
-    setBuilderPositions(next);
-  }
-
-  function handleEdgesChange(changes: EdgeChange[]) {
-    if (mode !== "builder") {
-      return;
-    }
-    const removeIds = new Set(
-      changes
-        .filter((change): change is EdgeChange & { type: "remove" } => change.type === "remove")
-        .map((entry) => entry.id)
-    );
-    if (removeIds.size === 0) {
-      return;
-    }
-    setBuilderSpec({
-      ...builderSpec,
-      edges: builderSpec.edges.filter((edge) => !removeIds.has(edge.id))
-    });
-  }
-
-  function handleConnect(connection: Connection) {
-    if (mode !== "builder" || !connection.source || !connection.target) {
-      return;
-    }
-    const newEdge = {
-      id: nextEdgeId(builderSpec),
-      from: connection.source,
-      to: connection.target
-    };
-    setBuilderSpec({ ...builderSpec, edges: [...builderSpec.edges, newEdge] });
-    setNotice("Connected nodes.");
-  }
-
+  /* ── builder: delete selected node ── */
   function deleteSelectedNode() {
-    if (mode !== "builder" || !selectedNodeId) {
-      return;
-    }
-    const draft = {
-      ...builderSpec,
-      nodes: builderSpec.nodes.filter((node) => node.id !== selectedNodeId),
-      edges: builderSpec.edges.filter((edge) => edge.from !== selectedNodeId && edge.to !== selectedNodeId)
-    };
-    const nextPositions = { ...builderPositions };
-    delete nextPositions[selectedNodeId];
-    setBuilderSpec(draft);
-    setBuilderPositions(nextPositions);
+    if (mode !== "builder" || !selectedNodeId) return;
+    setBuilderNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setBuilderEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
     setSelectedNodeId(null);
     setNotice("Node removed.");
   }
 
+  /* ── builder: delete selected edge ── */
   function deleteSelectedEdge() {
-    if (mode !== "builder" || !selectedEdgeId) {
-      return;
-    }
-    setBuilderSpec({
-      ...builderSpec,
-      edges: builderSpec.edges.filter((edge) => edge.id !== selectedEdgeId)
-    });
+    if (mode !== "builder" || !selectedEdgeId) return;
+    setBuilderEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
     setSelectedEdgeId(null);
     setNotice("Edge removed.");
   }
 
-  function resetAutoLayout() {
-    setBuilderPositions({});
-    setNotice("Auto-layout restored.");
+  /* ── builder: update a FlowNode property (from details panel) ── */
+  function updateBuilderNodeData(nodeId: string, updater: (fn: FlowNode) => FlowNode) {
+    setBuilderNodes((nds) =>
+      nds.map((n) => {
+        if (n.id !== nodeId) return n;
+        const updated = updater(n.data.flowNode);
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            title: "title" in updated ? updated.title : updated.type,
+            subtitle: nodeSubtitle(updated),
+            flowNode: updated
+          }
+        };
+      })
+    );
   }
 
+  /* ── builder: update edge label ── */
+  function updateBuilderEdgeLabel(edgeId: string, label: string) {
+    setBuilderEdges((eds) =>
+      eds.map((e) => (e.id === edgeId ? { ...e, label: label || undefined } : e))
+    );
+  }
+
+  /* ── builder: reset ── */
   function resetBuilderFlow() {
-    setBuilderSpec(BUILDER_BASE_SPEC);
-    setBuilderPositions({});
+    setBuilderNodes([]);
+    setBuilderEdges([]);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setNotice("Builder reset.");
   }
 
+  /* ── export helpers ── */
+  function getExportSpec(): FlowSpec {
+    if (mode === "builder") {
+      return builderToFlowSpec(builderNodes, builderEdges);
+    }
+    return viewerSpec;
+  }
+
   function handleExportJson() {
-    const exportSpec = buildExportSpec(activeSpec, activePositions);
+    const spec = getExportSpec();
     downloadBlob(
-      new Blob([JSON.stringify(exportSpec, null, 2)], { type: "application/json;charset=utf-8" }),
-      `${activeSpec.id}.json`
+      new Blob([JSON.stringify(spec, null, 2)], { type: "application/json;charset=utf-8" }),
+      `${spec.id}.json`
     );
     setNotice("Exported JSON.");
   }
 
   async function handleExportPng() {
-    if (!canvasCaptureRef.current) {
-      return;
-    }
+    if (!canvasCaptureRef.current) return;
     setBusyPngExport(true);
     try {
       const dataUrl = await toPng(canvasCaptureRef.current, {
@@ -366,7 +370,7 @@ export default function App() {
       });
       const anchor = document.createElement("a");
       anchor.href = dataUrl;
-      anchor.download = `${activeSpec.id}.png`;
+      anchor.download = `${getExportSpec().id}.png`;
       anchor.click();
       setNotice("Exported PNG.");
     } catch {
@@ -378,16 +382,22 @@ export default function App() {
 
   async function handleImportJson(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
+    if (!file) return;
     try {
       const text = await file.text();
       const parsed = parseFlowSpec(JSON.parse(text));
-      const importedPositions = parsed.ui?.nodePositions ?? {};
+      const positions = parsed.ui?.nodePositions ?? {};
       if (mode === "builder") {
-        setBuilderSpec(parsed);
-        setBuilderPositions(importedPositions);
+        const imported = parsed.nodes.map((fn, i) => toRfNode(fn, positions[fn.id] ?? { x: 120 + (i % 3) * 260, y: 100 + Math.floor(i / 3) * 160 }));
+        const importedEdges: Edge[] = parsed.edges.map((e) => ({
+          id: e.id,
+          source: e.from,
+          target: e.to,
+          label: e.label,
+          ...EDGE_STYLE
+        }));
+        setBuilderNodes(imported);
+        setBuilderEdges(importedEdges);
       } else {
         setCustomViewerSpec(parsed);
         setChoice("custom");
@@ -409,11 +419,12 @@ export default function App() {
     }
     setBusyMiroExport(true);
     try {
+      const spec = getExportSpec();
       const result = await exportFlowToMiro({
         boardId: miroBoardId.trim(),
         accessToken: miroToken.trim(),
-        flowSpec: activeSpec,
-        positionOverrides: activePositions
+        flowSpec: spec,
+        positionOverrides: spec.ui?.nodePositions ?? {}
       });
       setNotice(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
     } catch (error) {
@@ -427,6 +438,7 @@ export default function App() {
     }
   }
 
+  /* ── render ── */
   return (
     <ReactFlowProvider>
       <div className="shell">
@@ -442,11 +454,9 @@ export default function App() {
           {mode === "viewer" ? (
             <div className="sidebar-section">
               <label>Preset</label>
-              <select value={choice} onChange={(event) => setChoice(event.target.value as TemplateChoice)}>
-                {CHOICES.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
+              <select value={choice} onChange={(e) => setChoice(e.target.value as TemplateChoice)}>
+                {CHOICES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
             </div>
@@ -454,74 +464,21 @@ export default function App() {
             <div className="sidebar-section">
               <label>Builder tools</label>
               <div className="tool-grid">
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "email");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("email")}
-                >
-                  + Email
-                </button>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "sms");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("sms")}
-                >
-                  + SMS
-                </button>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "wait");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("wait")}
-                >
-                  + Wait
-                </button>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "split");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("split")}
-                >
-                  + Split
-                </button>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "outcome");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("outcome")}
-                >
-                  + Outcome
-                </button>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/flow-node-kind", "profileFilter");
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => appendBuilderNode("profileFilter")}
-                >
-                  + Filter
-                </button>
+                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter"] as NodeKind[]).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/flow-node-kind", kind);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onClick={() => appendBuilderNode(kind)}
+                  >
+                    + {kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1)}
+                  </button>
+                ))}
               </div>
-              <button type="button" className="reset-btn" onClick={resetAutoLayout}>Auto-layout</button>
               <button type="button" className="reset-btn" onClick={resetBuilderFlow}>Reset builder</button>
               <small className="hint">Drag a tool onto canvas or click to append.</small>
             </div>
@@ -529,8 +486,8 @@ export default function App() {
 
           <div className="sidebar-section">
             <label>Miro export</label>
-            <input type="text" placeholder="Board ID" value={miroBoardId} onChange={(event) => setMiroBoardId(event.target.value)} />
-            <input type="password" placeholder="Access token" value={miroToken} onChange={(event) => setMiroToken(event.target.value)} />
+            <input type="text" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
+            <input type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
             <button type="button" onClick={handleExportMiro} disabled={busyMiroExport}>
               {busyMiroExport ? "Exporting..." : "Export to Miro"}
             </button>
@@ -551,58 +508,39 @@ export default function App() {
 
           <div className="canvas-wrap" ref={canvasCaptureRef}>
             <ReactFlow
-              onInit={(instance) => {
-                reactFlowRef.current = instance;
-              }}
+              onInit={(instance) => { reactFlowRef.current = instance; }}
               nodes={flowNodes}
               edges={flowEdges}
-              fitView
               nodeTypes={nodeTypes}
+              fitView
               nodesDraggable={mode === "builder"}
               nodesConnectable={mode === "builder"}
               elementsSelectable
               onNodesChange={handleNodesChange}
               onEdgesChange={handleEdgesChange}
               onConnect={handleConnect}
-              onNodeClick={(_, node) => {
-                setSelectedNodeId(node.id);
-                setSelectedEdgeId(null);
-              }}
-              onEdgeClick={(_, edge) => {
-                setSelectedEdgeId(edge.id);
-                setSelectedNodeId(null);
-              }}
+              onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
+              onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
+              onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
               onDragOver={(event) => {
-                if (mode !== "builder") {
-                  return;
-                }
+                if (mode !== "builder") return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
               }}
               onDrop={(event) => {
-                if (mode !== "builder" || !reactFlowRef.current) {
-                  return;
-                }
+                if (mode !== "builder" || !reactFlowRef.current) return;
                 event.preventDefault();
                 const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                const allowed: NodeKind[] = ["email", "sms", "wait", "split", "outcome", "profileFilter"];
-                if (!allowed.includes(rawKind as NodeKind)) {
-                  return;
-                }
-                const position = reactFlowRef.current.screenToFlowPosition({
-                  x: event.clientX,
-                  y: event.clientY
-                });
+                const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter"];
+                if (!allowed.includes(rawKind as NodeKind)) return;
+                const position = reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY });
                 appendBuilderNode(rawKind as NodeKind, position);
-              }}
-              onPaneClick={() => {
-                setSelectedNodeId(null);
-                setSelectedEdgeId(null);
               }}
               deleteKeyCode={mode === "builder" ? "Delete" : null}
               panOnDrag
               defaultEdgeOptions={{
-                markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" }
+                type: "default",
+                ...EDGE_STYLE
               }}
             >
               <Background color="#d6deef" gap={24} />
@@ -612,84 +550,66 @@ export default function App() {
           </div>
         </main>
 
+        {/* ── details panel ── */}
         <aside className="panel">
           <h2>Details</h2>
-          {!selectedNode && !selectedEdge ? <p>Select a node or edge.</p> : null}
+          {!selectedFlowNode && !selectedEdge ? <p>Select a node or edge.</p> : null}
 
-          {selectedNode ? (
+          {selectedFlowNode ? (
             <div className="details">
-              <p><b>ID:</b> {selectedNode.id}</p>
-              <p><b>Type:</b> {selectedNode.type}</p>
-              {"title" in selectedNode ? (
+              <p><b>ID:</b> {selectedFlowNode.id}</p>
+              <p><b>Type:</b> {selectedFlowNode.type}</p>
+
+              {"title" in selectedFlowNode ? (
                 <label>
                   Title
                   <input
-                    value={selectedNode.title}
+                    value={selectedFlowNode.title}
                     disabled={mode !== "builder"}
-                    onChange={(event) => {
-                      if (mode !== "builder") {
-                        return;
-                      }
-                      setBuilderSpec({
-                        ...builderSpec,
-                        nodes: builderSpec.nodes.map((node) =>
-                          node.id === selectedNode.id && "title" in node
-                            ? { ...node, title: event.target.value }
-                            : node
-                        )
-                      });
+                    onChange={(e) => {
+                      if (mode !== "builder") return;
+                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
+                        "title" in fn ? { ...fn, title: e.target.value } : fn
+                      );
                     }}
                   />
                 </label>
               ) : null}
-              {"event" in selectedNode ? (
+
+              {"event" in selectedFlowNode ? (
                 <label>
                   Trigger event
                   <input
-                    value={selectedNode.event}
+                    value={selectedFlowNode.event}
                     disabled={mode !== "builder"}
-                    onChange={(event) => {
-                      if (mode !== "builder") {
-                        return;
-                      }
-                      setBuilderSpec({
-                        ...builderSpec,
-                        nodes: builderSpec.nodes.map((node) =>
-                          node.id === selectedNode.id && node.type === "trigger"
-                            ? { ...node, event: event.target.value }
-                            : node
-                        )
-                      });
+                    onChange={(e) => {
+                      if (mode !== "builder") return;
+                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
+                        fn.type === "trigger" ? { ...fn, event: e.target.value } : fn
+                      );
                     }}
                   />
                 </label>
               ) : null}
-              {"condition" in selectedNode ? (
+
+              {"condition" in selectedFlowNode ? (
                 <label>
                   Split condition
                   <input
-                    value={selectedNode.condition}
+                    value={selectedFlowNode.condition}
                     disabled={mode !== "builder"}
-                    onChange={(event) => {
-                      if (mode !== "builder") {
-                        return;
-                      }
-                      setBuilderSpec({
-                        ...builderSpec,
-                        nodes: builderSpec.nodes.map((node) =>
-                          node.id === selectedNode.id && node.type === "split"
-                            ? { ...node, condition: event.target.value }
-                            : node
-                        )
-                      });
+                    onChange={(e) => {
+                      if (mode !== "builder") return;
+                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
+                        fn.type === "split" ? { ...fn, condition: e.target.value } : fn
+                      );
                     }}
                   />
                 </label>
               ) : null}
+
               {mode === "builder" ? (
-                <button type="button" className="danger" onClick={deleteSelectedNode}>
-                  Delete node
-                </button>
+                <button type="button" className="danger" onClick={deleteSelectedNode}>Delete node</button>
               ) : null}
             </div>
           ) : null}
@@ -702,25 +622,14 @@ export default function App() {
                 <input
                   value={selectedEdge.label ?? ""}
                   disabled={mode !== "builder"}
-                  onChange={(event) => {
-                    if (mode !== "builder") {
-                      return;
-                    }
-                    setBuilderSpec({
-                      ...builderSpec,
-                      edges: builderSpec.edges.map((edge) =>
-                        edge.id === selectedEdge.id
-                          ? { ...edge, label: event.target.value || undefined }
-                          : edge
-                      )
-                    });
+                  onChange={(e) => {
+                    if (mode !== "builder") return;
+                    updateBuilderEdgeLabel(selectedEdge.id, e.target.value);
                   }}
                 />
               </label>
               {mode === "builder" ? (
-                <button type="button" className="danger" onClick={deleteSelectedEdge}>
-                  Delete edge
-                </button>
+                <button type="button" className="danger" onClick={deleteSelectedEdge}>Delete edge</button>
               ) : null}
             </div>
           ) : null}

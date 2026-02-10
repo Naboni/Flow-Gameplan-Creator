@@ -1,5 +1,4 @@
 import type { FlowEdge, FlowNode, FlowSpec } from "@flow/core";
-import { parseFlowSpec } from "@flow/core";
 
 export type LayoutPoint = {
   x: number;
@@ -98,8 +97,14 @@ export function buildLayout(
   rawSpec: FlowSpec,
   options: LayoutOptions = {}
 ): LayoutResult {
-  const spec = parseFlowSpec(rawSpec);
+  /* Accept raw spec without validation so the builder can pass
+     incomplete / in-progress flows that would fail strict schema checks. */
+  const spec = rawSpec;
   const resolved = { ...DEFAULT_LAYOUT_OPTIONS, ...options };
+
+  if (spec.nodes.length === 0) {
+    return { nodes: [], edges: [] };
+  }
 
   const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
   const outgoingByNode = new Map<string, FlowEdge[]>();
