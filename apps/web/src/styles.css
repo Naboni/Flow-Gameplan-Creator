@@ -153,11 +153,16 @@ body {
   padding: 10px 12px;
   background: #fff;
   box-shadow: 0 6px 16px rgba(17, 41, 92, 0.08);
+  cursor: grab;
 }
 
 .canvas-node.selected {
   border-color: #1f53ff;
   box-shadow: 0 0 0 2px rgba(31, 83, 255, 0.15);
+}
+
+.canvas-node:active {
+  cursor: grabbing;
 }
 
 .canvas-node-trigger {

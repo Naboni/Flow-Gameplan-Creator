@@ -15,15 +15,8 @@ import ReactFlow, {
   type NodeProps
 } from "reactflow";
 import {
-  addEdge,
-  addNode,
   expandPackageTemplate,
   parseFlowSpec,
-  parseFlowSpecSafe,
-  removeEdge,
-  removeNode,
-  updateEdgeLabel,
-  updateNodeTitle,
   welcomeSeriesFixture,
   type FlowNode,
   type FlowSpec
@@ -183,7 +176,6 @@ export default function App() {
   const [busyMiroExport, setBusyMiroExport] = useState(false);
   const [miroBoardId, setMiroBoardId] = useState("");
   const [miroToken, setMiroToken] = useState("");
-  const [draggingKind, setDraggingKind] = useState<NodeKind | null>(null);
 
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
@@ -246,47 +238,22 @@ export default function App() {
     ? activeSpec.edges.find((edge) => edge.id === selectedEdgeId) ?? null
     : null;
 
-  function applyBuilderDraft(draft: FlowSpec, nextPositions: PositionMap = builderPositions) {
-    const parsed = parseFlowSpecSafe(draft);
-    if (!parsed.success) {
-      setNotice(`Invalid update: ${parsed.error.issues[0]?.message ?? "Unknown error"}`);
-      return;
-    }
-    const validIds = new Set(parsed.data.nodes.map((node) => node.id));
-    const cleaned: PositionMap = {};
-    for (const [id, position] of Object.entries(nextPositions)) {
-      if (validIds.has(id)) {
-        cleaned[id] = position;
-      }
-    }
-    setBuilderSpec(parsed.data);
-    setBuilderPositions(cleaned);
-  }
-
   function appendBuilderNode(kind: NodeKind, position?: { x: number; y: number }) {
     if (mode !== "builder") {
       return;
     }
     const created = createNodeFromKind(kind);
-    let draft = ensureChannels(builderSpec, created);
-    draft = addNode(draft, created);
-    const from = selectedNodeId ?? draft.nodes.find((node) => node.type === "trigger")?.id;
-    if (from) {
-      draft = addEdge(draft, { id: nextEdgeId(draft), from, to: created.id });
-    }
-    if (kind === "split") {
-      const yesNode = { id: `${created.id}_yes`, type: "outcome" as const, title: "Yes Outcome", result: "Yes path" };
-      const noNode = { id: `${created.id}_no`, type: "outcome" as const, title: "No Outcome", result: "No path" };
-      draft = addNode(draft, yesNode);
-      draft = addNode(draft, noNode);
-      draft = addEdge(draft, { id: nextEdgeId(draft), from: created.id, to: yesNode.id, label: "Yes" });
-      draft = addEdge(draft, { id: nextEdgeId(draft), from: created.id, to: noNode.id, label: "No" });
+    const draft = { ...builderSpec };
+    draft.nodes = [...draft.nodes, created];
+    if (created.type === "message" && !draft.channels.includes(created.channel)) {
+      draft.channels = [...draft.channels, created.channel];
     }
     const nextPositions = { ...builderPositions };
     if (position) {
       nextPositions[created.id] = position;
     }
-    applyBuilderDraft(draft, nextPositions);
+    setBuilderSpec(draft);
+    setBuilderPositions(nextPositions);
     setSelectedNodeId(created.id);
     setNotice("Node added.");
   }
@@ -308,65 +275,60 @@ export default function App() {
     if (mode !== "builder") {
       return;
     }
-    const removeIds = changes
-      .filter((change): change is EdgeChange & { type: "remove" } => change.type === "remove")
-      .map((entry) => entry.id);
-    if (removeIds.length === 0) {
+    const removeIds = new Set(
+      changes
+        .filter((change): change is EdgeChange & { type: "remove" } => change.type === "remove")
+        .map((entry) => entry.id)
+    );
+    if (removeIds.size === 0) {
       return;
     }
-    let draft = builderSpec;
-    try {
-      for (const edgeId of removeIds) {
-        draft = removeEdge(draft, edgeId);
-      }
-      applyBuilderDraft(draft);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Edge update failed.");
-    }
+    setBuilderSpec({
+      ...builderSpec,
+      edges: builderSpec.edges.filter((edge) => !removeIds.has(edge.id))
+    });
   }
 
   function handleConnect(connection: Connection) {
     if (mode !== "builder" || !connection.source || !connection.target) {
       return;
     }
-    try {
-      applyBuilderDraft(
-        addEdge(builderSpec, {
-          id: nextEdgeId(builderSpec),
-          from: connection.source,
-          to: connection.target
-        })
-      );
-      setNotice("Connected nodes.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Connect failed.");
-    }
+    const newEdge = {
+      id: nextEdgeId(builderSpec),
+      from: connection.source,
+      to: connection.target
+    };
+    setBuilderSpec({ ...builderSpec, edges: [...builderSpec.edges, newEdge] });
+    setNotice("Connected nodes.");
   }
 
   function deleteSelectedNode() {
     if (mode !== "builder" || !selectedNodeId) {
       return;
     }
-    try {
-      applyBuilderDraft(removeNode(builderSpec, selectedNodeId));
-      setSelectedNodeId(null);
-      setNotice("Node removed.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Node removal failed.");
-    }
+    const draft = {
+      ...builderSpec,
+      nodes: builderSpec.nodes.filter((node) => node.id !== selectedNodeId),
+      edges: builderSpec.edges.filter((edge) => edge.from !== selectedNodeId && edge.to !== selectedNodeId)
+    };
+    const nextPositions = { ...builderPositions };
+    delete nextPositions[selectedNodeId];
+    setBuilderSpec(draft);
+    setBuilderPositions(nextPositions);
+    setSelectedNodeId(null);
+    setNotice("Node removed.");
   }
 
   function deleteSelectedEdge() {
     if (mode !== "builder" || !selectedEdgeId) {
       return;
     }
-    try {
-      applyBuilderDraft(removeEdge(builderSpec, selectedEdgeId));
-      setSelectedEdgeId(null);
-      setNotice("Edge removed.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Edge removal failed.");
-    }
+    setBuilderSpec({
+      ...builderSpec,
+      edges: builderSpec.edges.filter((edge) => edge.id !== selectedEdgeId)
+    });
+    setSelectedEdgeId(null);
+    setNotice("Edge removed.");
   }
 
   function resetAutoLayout() {
@@ -492,12 +454,72 @@ export default function App() {
             <div className="sidebar-section">
               <label>Builder tools</label>
               <div className="tool-grid">
-                <button type="button" draggable onDragStart={() => setDraggingKind("email")} onClick={() => appendBuilderNode("email")}>+ Email</button>
-                <button type="button" draggable onDragStart={() => setDraggingKind("sms")} onClick={() => appendBuilderNode("sms")}>+ SMS</button>
-                <button type="button" draggable onDragStart={() => setDraggingKind("wait")} onClick={() => appendBuilderNode("wait")}>+ Wait</button>
-                <button type="button" draggable onDragStart={() => setDraggingKind("split")} onClick={() => appendBuilderNode("split")}>+ Split</button>
-                <button type="button" draggable onDragStart={() => setDraggingKind("outcome")} onClick={() => appendBuilderNode("outcome")}>+ Outcome</button>
-                <button type="button" draggable onDragStart={() => setDraggingKind("profileFilter")} onClick={() => appendBuilderNode("profileFilter")}>+ Filter</button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "email");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("email")}
+                >
+                  + Email
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "sms");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("sms")}
+                >
+                  + SMS
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "wait");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("wait")}
+                >
+                  + Wait
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "split");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("split")}
+                >
+                  + Split
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "outcome");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("outcome")}
+                >
+                  + Outcome
+                </button>
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/flow-node-kind", "profileFilter");
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  onClick={() => appendBuilderNode("profileFilter")}
+                >
+                  + Filter
+                </button>
               </div>
               <button type="button" className="reset-btn" onClick={resetAutoLayout}>Auto-layout</button>
               <button type="button" className="reset-btn" onClick={resetBuilderFlow}>Reset builder</button>
@@ -558,18 +580,27 @@ export default function App() {
                 event.dataTransfer.dropEffect = "move";
               }}
               onDrop={(event) => {
-                if (mode !== "builder" || !draggingKind || !reactFlowRef.current) {
+                if (mode !== "builder" || !reactFlowRef.current) {
                   return;
                 }
                 event.preventDefault();
+                const rawKind = event.dataTransfer.getData("application/flow-node-kind");
+                const allowed: NodeKind[] = ["email", "sms", "wait", "split", "outcome", "profileFilter"];
+                if (!allowed.includes(rawKind as NodeKind)) {
+                  return;
+                }
                 const position = reactFlowRef.current.screenToFlowPosition({
                   x: event.clientX,
                   y: event.clientY
                 });
-                appendBuilderNode(draggingKind, position);
-                setDraggingKind(null);
+                appendBuilderNode(rawKind as NodeKind, position);
+              }}
+              onPaneClick={() => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
               }}
               deleteKeyCode={mode === "builder" ? "Delete" : null}
+              panOnDrag
               defaultEdgeOptions={{
                 markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" }
               }}
@@ -594,15 +625,19 @@ export default function App() {
                   Title
                   <input
                     value={selectedNode.title}
+                    disabled={mode !== "builder"}
                     onChange={(event) => {
                       if (mode !== "builder") {
                         return;
                       }
-                      try {
-                        applyBuilderDraft(updateNodeTitle(builderSpec, selectedNode.id, event.target.value));
-                      } catch (error) {
-                        setNotice(error instanceof Error ? error.message : "Node update failed.");
-                      }
+                      setBuilderSpec({
+                        ...builderSpec,
+                        nodes: builderSpec.nodes.map((node) =>
+                          node.id === selectedNode.id && "title" in node
+                            ? { ...node, title: event.target.value }
+                            : node
+                        )
+                      });
                     }}
                   />
                 </label>
@@ -617,15 +652,14 @@ export default function App() {
                       if (mode !== "builder") {
                         return;
                       }
-                      const draft = {
+                      setBuilderSpec({
                         ...builderSpec,
                         nodes: builderSpec.nodes.map((node) =>
                           node.id === selectedNode.id && node.type === "trigger"
                             ? { ...node, event: event.target.value }
                             : node
                         )
-                      };
-                      applyBuilderDraft(draft);
+                      });
                     }}
                   />
                 </label>
@@ -640,15 +674,14 @@ export default function App() {
                       if (mode !== "builder") {
                         return;
                       }
-                      const draft = {
+                      setBuilderSpec({
                         ...builderSpec,
                         nodes: builderSpec.nodes.map((node) =>
                           node.id === selectedNode.id && node.type === "split"
                             ? { ...node, condition: event.target.value }
                             : node
                         )
-                      };
-                      applyBuilderDraft(draft);
+                      });
                     }}
                   />
                 </label>
@@ -673,11 +706,14 @@ export default function App() {
                     if (mode !== "builder") {
                       return;
                     }
-                    try {
-                      applyBuilderDraft(updateEdgeLabel(builderSpec, selectedEdge.id, event.target.value));
-                    } catch (error) {
-                      setNotice(error instanceof Error ? error.message : "Edge update failed.");
-                    }
+                    setBuilderSpec({
+                      ...builderSpec,
+                      edges: builderSpec.edges.map((edge) =>
+                        edge.id === selectedEdge.id
+                          ? { ...edge, label: event.target.value || undefined }
+                          : edge
+                      )
+                    });
                   }}
                 />
               </label>
