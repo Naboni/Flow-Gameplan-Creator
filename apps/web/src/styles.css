@@ -40,6 +40,7 @@ body {
 .controls {
   display: flex;
   gap: 14px;
+  align-items: flex-end;
 }
 
 .controls label {
@@ -53,6 +54,37 @@ body {
 select,
 input[type="range"] {
   min-width: 220px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions button {
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #3f4b74;
+  background: #1b2748;
+  color: #e8ecf8;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.notice {
+  padding: 8px 22px;
+  font-size: 13px;
+  color: #a8f0bf;
+  border-bottom: 1px solid #2c3554;
 }
 
 select {

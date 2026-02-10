@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   expandPackageTemplate,
   parseFlowSpec,
@@ -6,17 +6,27 @@ import {
   type FlowSpec
 } from "@flow/core";
 import { buildLayout } from "@flow/layout";
+import { toPng } from "html-to-image";
 
-type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system";
+type TemplateChoice =
+  | "welcome-series"
+  | "core-foundation"
+  | "growth-engine"
+  | "full-system"
+  | "custom";
 
 const CHOICES: Array<{ label: string; value: TemplateChoice }> = [
   { label: "Welcome Series (test case)", value: "welcome-series" },
   { label: "Core Foundation", value: "core-foundation" },
   { label: "Growth Engine", value: "growth-engine" },
-  { label: "Full System", value: "full-system" }
+  { label: "Full System", value: "full-system" },
+  { label: "Custom (imported)", value: "custom" }
 ];
 
 function getSpecFromChoice(choice: TemplateChoice): FlowSpec {
+  if (choice === "custom") {
+    return parseFlowSpec(welcomeSeriesFixture);
+  }
   if (choice === "welcome-series") {
     return parseFlowSpec(welcomeSeriesFixture);
   }
@@ -44,8 +54,18 @@ export default function App() {
   const [choice, setChoice] = useState<TemplateChoice>("welcome-series");
   const [zoom, setZoom] = useState(1);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [customSpec, setCustomSpec] = useState<FlowSpec | null>(null);
+  const [notice, setNotice] = useState<string>("");
+  const [busyExport, setBusyExport] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
 
-  const spec = useMemo(() => getSpecFromChoice(choice), [choice]);
+  const spec = useMemo(() => {
+    if (choice === "custom" && customSpec) {
+      return customSpec;
+    }
+    return getSpecFromChoice(choice);
+  }, [choice, customSpec]);
   const layout = useMemo(() => buildLayout(spec), [spec]);
   const nodesById = useMemo(() => new Map(spec.nodes.map((node) => [node.id, node])), [spec.nodes]);
   const selectedNode = selectedNodeId ? nodesById.get(selectedNodeId) : null;
@@ -55,6 +75,66 @@ export default function App() {
     const maxY = Math.max(...layout.nodes.map((node) => node.y + node.height), 0);
     return { width: maxX + 200, height: maxY + 200 };
   }, [layout.nodes]);
+
+  function downloadBlob(content: Blob, filename: string) {
+    const url = URL.createObjectURL(content);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportJson() {
+    const payload = JSON.stringify(spec, null, 2);
+    downloadBlob(
+      new Blob([payload], { type: "application/json;charset=utf-8" }),
+      `${spec.id}.json`
+    );
+    setNotice("Exported JSON.");
+  }
+
+  async function handleExportPng() {
+    if (!stageRef.current) {
+      return;
+    }
+    setBusyExport(true);
+    try {
+      const dataUrl = await toPng(stageRef.current, {
+        cacheBust: true,
+        backgroundColor: "#f3f4f7",
+        pixelRatio: 2
+      });
+      const anchor = document.createElement("a");
+      anchor.href = dataUrl;
+      anchor.download = `${spec.id}.png`;
+      anchor.click();
+      setNotice("Exported PNG.");
+    } catch {
+      setNotice("PNG export failed.");
+    } finally {
+      setBusyExport(false);
+    }
+  }
+
+  async function handleImportJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      const parsed = parseFlowSpec(JSON.parse(text));
+      setCustomSpec(parsed);
+      setChoice("custom");
+      setSelectedNodeId(null);
+      setNotice("Imported JSON successfully.");
+    } catch {
+      setNotice("Invalid JSON or flow schema.");
+    } finally {
+      event.target.value = "";
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -85,13 +165,33 @@ export default function App() {
               onChange={(event) => setZoom(Number(event.target.value))}
             />
           </label>
+          <div className="actions">
+            <button type="button" onClick={handleExportJson}>
+              Export JSON
+            </button>
+            <button type="button" onClick={handleExportPng} disabled={busyExport}>
+              {busyExport ? "Exporting..." : "Export PNG"}
+            </button>
+            <button type="button" onClick={() => importInputRef.current?.click()}>
+              Import JSON
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden-input"
+              onChange={handleImportJson}
+            />
+          </div>
         </div>
       </header>
+      {notice ? <div className="notice">{notice}</div> : null}
 
       <main className="content-grid">
         <section className="canvas-panel">
           <div className="canvas-scroll">
             <div
+              ref={stageRef}
               className="canvas-stage"
               style={{
                 width: bounds.width,

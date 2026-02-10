@@ -11,7 +11,7 @@
   "dependencies": {
     "@flow/core": "file:../../libs/core",
     "@flow/layout": "file:../../libs/layout",
-    "flow-gameplan-creator": "file:../..",
+    "html-to-image": "^1.11.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
