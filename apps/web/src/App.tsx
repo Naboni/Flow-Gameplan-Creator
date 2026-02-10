@@ -28,11 +28,13 @@ import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
 
-type CanvasMode = "viewer" | "builder";
+/* ── types ── */
+
+type AppTab = "generate" | "viewer" | "editor";
 type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
+type PlanKey = "core-foundation" | "growth-engine" | "full-system";
 type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note";
 
-/* ── extended node data: includes the raw FlowNode for the details panel ── */
 type AppNodeData = {
   title: string;
   subtitle: string;
@@ -40,19 +42,49 @@ type AppNodeData = {
   flowNode: FlowNode;
 };
 
+type BrandProfile = {
+  brandName: string;
+  industry: string;
+  targetAudience: string;
+  brandVoice: string;
+  keyProducts: string[];
+  uniqueSellingPoints: string[];
+  discountStrategy: string;
+  summary: string;
+};
+
+type GeneratedResult = {
+  planKey: string;
+  planName: string;
+  brandName: string;
+  flows: FlowSpec[];
+};
+
+/* ── constants ── */
+
+const API_BASE = "http://localhost:3001";
+
 const EDGE_STYLE = {
   markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
   style: { stroke: "#6f7b91", strokeWidth: 2 },
   labelStyle: { fill: "#51607d", fontWeight: 700, fontSize: 12 }
 } as const;
 
-const CHOICES: Array<{ label: string; value: TemplateChoice }> = [
+const VIEWER_CHOICES: Array<{ label: string; value: TemplateChoice }> = [
   { label: "Welcome Series (test case)", value: "welcome-series" },
   { label: "Core Foundation", value: "core-foundation" },
   { label: "Growth Engine", value: "growth-engine" },
   { label: "Full System", value: "full-system" },
   { label: "Custom (imported)", value: "custom" }
 ];
+
+const PLAN_OPTIONS: Array<{ label: string; value: PlanKey; desc: string }> = [
+  { label: "Core Foundation", value: "core-foundation", desc: "6 flows — brands under $1M/yr" },
+  { label: "Growth Engine", value: "growth-engine", desc: "8 flows — scaling to $1-2M/yr" },
+  { label: "Full System", value: "full-system", desc: "9 flows — scaling to $2-20M/yr" }
+];
+
+/* ── helpers ── */
 
 function getSpecFromChoice(choice: TemplateChoice): FlowSpec {
   if (choice === "welcome-series" || choice === "custom") {
@@ -62,11 +94,7 @@ function getSpecFromChoice(choice: TemplateChoice): FlowSpec {
 }
 
 function sanitizeId(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "_")
-    .replace(/_{2,}/g, "_")
-    .replace(/^_+|_+$/g, "");
+  return input.toLowerCase().replace(/[^a-z0-9_-]/g, "_").replace(/_{2,}/g, "_").replace(/^_+|_+$/g, "");
 }
 
 function nodeSubtitle(node: FlowNode): string {
@@ -80,10 +108,10 @@ function nodeSubtitle(node: FlowNode): string {
 
 function downloadBlob(content: Blob, filename: string) {
   const url = URL.createObjectURL(content);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -99,7 +127,6 @@ function createFlowNode(kind: NodeKind): FlowNode {
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
-/** Convert a FlowNode into a ReactFlow Node */
 function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<AppNodeData> {
   return {
     id: flowNode.id,
@@ -114,7 +141,45 @@ function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<
   };
 }
 
+function specToRfNodes(spec: FlowSpec): Node<AppNodeData>[] {
+  const positions = spec.ui?.nodePositions ?? {};
+  return spec.nodes.map((fn, i) =>
+    toRfNode(fn, positions[fn.id] ?? { x: 120 + (i % 3) * 280, y: 80 + Math.floor(i / 3) * 180 })
+  );
+}
+
+function specToRfEdges(spec: FlowSpec): Edge[] {
+  return spec.edges.map((e) => ({
+    id: e.id,
+    source: e.from,
+    target: e.to,
+    label: e.label,
+    ...EDGE_STYLE
+  }));
+}
+
+function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]): FlowSpec {
+  const channels = new Set<"email" | "sms">(["email"]);
+  const flowNodes: FlowNode[] = rfNodes.map((n) => {
+    const fn = n.data.flowNode;
+    if (fn.type === "message") channels.add(fn.channel);
+    return fn;
+  });
+  const flowEdges = rfEdges.map((e) => ({
+    id: e.id, from: e.source, to: e.target,
+    ...(typeof e.label === "string" && e.label ? { label: e.label } : {})
+  }));
+  const positions: Record<string, { x: number; y: number }> = {};
+  for (const n of rfNodes) positions[n.id] = n.position;
+  return {
+    id: "editor_flow", name: "Custom Editor Flow", source: { mode: "manual" },
+    channels: [...channels], defaults: { delay: { value: 2, unit: "days" } },
+    nodes: flowNodes, edges: flowEdges, ui: { nodePositions: positions }
+  } as FlowSpec;
+}
+
 /* ── custom node component ── */
+
 function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   if (data.nodeType === "note") {
     return (
@@ -136,49 +201,35 @@ function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   );
 }
 
-/* ── helpers to reconstruct FlowSpec from builder RF state (for export) ── */
-function builderToFlowSpec(
-  rfNodes: Node<AppNodeData>[],
-  rfEdges: Edge[]
-): FlowSpec {
-  const channels = new Set<"email" | "sms">(["email"]);
-  const flowNodes: FlowNode[] = rfNodes.map((n) => {
-    const fn = n.data.flowNode;
-    if (fn.type === "message") channels.add(fn.channel);
-    return fn;
-  });
-  const flowEdges = rfEdges.map((e) => ({
-    id: e.id,
-    from: e.source,
-    to: e.target,
-    ...(typeof e.label === "string" && e.label ? { label: e.label } : {})
-  }));
-  const positions: Record<string, { x: number; y: number }> = {};
-  for (const n of rfNodes) {
-    positions[n.id] = n.position;
-  }
-  return {
-    id: "builder_flow",
-    name: "Custom Builder Flow",
-    source: { mode: "manual" },
-    channels: [...channels],
-    defaults: { delay: { value: 2, unit: "days" } },
-    nodes: flowNodes,
-    edges: flowEdges,
-    ui: { nodePositions: positions }
-  } as FlowSpec;
-}
+/* ═══════════════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════════════ */
 
-/* ── main app ── */
 export default function App() {
-  const [mode, setMode] = useState<CanvasMode>("viewer");
-  const [choice, setChoice] = useState<TemplateChoice>("welcome-series");
+  const [tab, setTab] = useState<AppTab>("generate");
+
+  /* ── generate tab state ── */
+  const [genPlan, setGenPlan] = useState<PlanKey>("core-foundation");
+  const [genUrl, setGenUrl] = useState("");
+  const [genBrand, setGenBrand] = useState("");
+  const [genNotes, setGenNotes] = useState("");
+  const [genBusy, setGenBusy] = useState(false);
+  const [genStep, setGenStep] = useState<"form" | "analyzing" | "generating" | "done">("form");
+  const [genResult, setGenResult] = useState<GeneratedResult | null>(null);
+  const [genError, setGenError] = useState("");
+
+  /* ── generated flows navigation ── */
+  const [activeFlowIndex, setActiveFlowIndex] = useState(0);
+
+  /* ── viewer state ── */
+  const [viewerChoice, setViewerChoice] = useState<TemplateChoice>("welcome-series");
   const [customViewerSpec, setCustomViewerSpec] = useState<FlowSpec | null>(null);
 
-  /* Builder state: ReactFlow owns the arrays directly, just like CartPanda */
-  const [builderNodes, setBuilderNodes] = useState<Node<AppNodeData>[]>([]);
-  const [builderEdges, setBuilderEdges] = useState<Edge[]>([]);
+  /* ── editor state ── */
+  const [editorNodes, setEditorNodes] = useState<Node<AppNodeData>[]>([]);
+  const [editorEdges, setEditorEdges] = useState<Edge[]>([]);
 
+  /* ── shared state ── */
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -189,16 +240,17 @@ export default function App() {
 
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
-  const reactFlowRef = useRef<{
-    screenToFlowPosition: (pos: { x: number; y: number }) => { x: number; y: number };
-  } | null>(null);
+  const reactFlowRef = useRef<{ screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number } } | null>(null);
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
 
-  /* ── viewer derived state ── */
+  /* ── active spec for viewer/generate tabs ── */
   const viewerSpec = useMemo(() => {
-    if (choice === "custom" && customViewerSpec) return customViewerSpec;
-    return getSpecFromChoice(choice);
-  }, [choice, customViewerSpec]);
+    if (tab === "generate" && genResult && genResult.flows.length > 0) {
+      return genResult.flows[activeFlowIndex] ?? genResult.flows[0];
+    }
+    if (viewerChoice === "custom" && customViewerSpec) return customViewerSpec;
+    return getSpecFromChoice(viewerChoice);
+  }, [tab, genResult, activeFlowIndex, viewerChoice, customViewerSpec]);
 
   const viewerLayout = useMemo(
     () => buildLayout(viewerSpec, { positionOverrides: viewerSpec.ui?.nodePositions ?? {} }),
@@ -206,190 +258,188 @@ export default function App() {
   );
 
   const viewerNodes = useMemo<Node<AppNodeData>[]>(
-    () =>
-      viewerLayout.nodes.map((ln) => {
-        const raw = viewerSpec.nodes.find((n) => n.id === ln.id);
-        const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
-        return {
-          id: ln.id,
-          type: "flowNode",
-          position: { x: ln.x, y: ln.y },
-          draggable: false,
-          data: {
-            title: ln.title,
-            subtitle: raw ? nodeSubtitle(raw) : ln.type,
-            nodeType: ln.type,
-            flowNode
-          }
-        };
-      }),
+    () => viewerLayout.nodes.map((ln) => {
+      const raw = viewerSpec.nodes.find((n) => n.id === ln.id);
+      const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
+      return {
+        id: ln.id, type: "flowNode", position: { x: ln.x, y: ln.y }, draggable: false,
+        data: { title: ln.title, subtitle: raw ? nodeSubtitle(raw) : ln.type, nodeType: ln.type, flowNode }
+      };
+    }),
     [viewerLayout.nodes, viewerSpec.nodes]
   );
 
   const viewerEdges = useMemo<Edge[]>(
-    () =>
-      viewerSpec.edges.map((e) => ({
-        id: e.id,
-        source: e.from,
-        target: e.to,
-        label: e.label,
-        ...EDGE_STYLE
-      })),
+    () => viewerSpec.edges.map((e) => ({ id: e.id, source: e.from, target: e.to, label: e.label, ...EDGE_STYLE })),
     [viewerSpec.edges]
   );
 
-  /* ── pick active arrays ── */
-  const flowNodes = mode === "viewer" ? viewerNodes : builderNodes;
-  const flowEdges = mode === "viewer" ? viewerEdges : builderEdges;
+  /* ── pick active nodes/edges based on tab ── */
+  const isEditorActive = tab === "editor";
+  const flowNodes = isEditorActive ? editorNodes : viewerNodes;
+  const flowEdges = isEditorActive ? editorEdges : viewerEdges;
 
-  /* ── selected element lookup (works for both modes) ── */
+  /* ── selected element lookup ── */
   const selectedFlowNode: FlowNode | null = useMemo(() => {
     if (!selectedNodeId) return null;
-    const rfNode = flowNodes.find((n) => n.id === selectedNodeId);
-    return rfNode?.data.flowNode ?? null;
+    return flowNodes.find((n) => n.id === selectedNodeId)?.data.flowNode ?? null;
   }, [selectedNodeId, flowNodes]);
 
   const selectedEdge = useMemo(() => {
     if (!selectedEdgeId) return null;
-    const rfEdge = flowEdges.find((e) => e.id === selectedEdgeId);
-    if (!rfEdge) return null;
-    return { id: rfEdge.id, label: typeof rfEdge.label === "string" ? rfEdge.label : undefined };
+    const e = flowEdges.find((e) => e.id === selectedEdgeId);
+    if (!e) return null;
+    return { id: e.id, label: typeof e.label === "string" ? e.label : undefined };
   }, [selectedEdgeId, flowEdges]);
 
-  /* ── builder: node changes (drag, select, remove) – mirrors CartPanda ── */
-  const handleNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      if (mode !== "builder") return;
-      setBuilderNodes((nds) => applyNodeChanges(changes, nds));
-    },
-    [mode]
-  );
+  /* ── editor handlers ── */
+  const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    if (!isEditorActive) return;
+    setEditorNodes((nds) => applyNodeChanges(changes, nds));
+  }, [isEditorActive]);
 
-  /* ── builder: edge changes (remove) ── */
-  const handleEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      if (mode !== "builder") return;
-      setBuilderEdges((eds) => applyEdgeChanges(changes, eds));
-    },
-    [mode]
-  );
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    if (!isEditorActive) return;
+    setEditorEdges((eds) => applyEdgeChanges(changes, eds));
+  }, [isEditorActive]);
 
-  /* ── builder: connect two nodes ── */
-  const handleConnect = useCallback(
-    (connection: Connection) => {
-      if (mode !== "builder" || !connection.source || !connection.target) return;
-      setBuilderEdges((eds) =>
-        rfAddEdge(
-          {
-            ...connection,
-            ...EDGE_STYLE
-          },
-          eds
-        )
-      );
-      setNotice("Connected nodes.");
-    },
-    [mode]
-  );
+  const handleConnect = useCallback((connection: Connection) => {
+    if (!isEditorActive || !connection.source || !connection.target) return;
+    setEditorEdges((eds) => rfAddEdge({ ...connection, ...EDGE_STYLE }, eds));
+    setNotice("Connected nodes.");
+  }, [isEditorActive]);
 
-  /* ── builder: add node from sidebar ── */
-  function appendBuilderNode(kind: NodeKind, position?: { x: number; y: number }) {
-    if (mode !== "builder") return;
-    const flowNode = createFlowNode(kind);
-    const pos = position ?? { x: 200, y: 80 + builderNodes.length * 140 };
-    setBuilderNodes((nds) => [...nds, toRfNode(flowNode, pos)]);
-    setSelectedNodeId(flowNode.id);
+  function appendEditorNode(kind: NodeKind, position?: { x: number; y: number }) {
+    if (!isEditorActive) return;
+    const fn = createFlowNode(kind);
+    setEditorNodes((nds) => [...nds, toRfNode(fn, position ?? { x: 200, y: 80 + editorNodes.length * 140 })]);
+    setSelectedNodeId(fn.id);
     setNotice("Node added.");
   }
 
-  /* ── builder: delete selected node ── */
   function deleteSelectedNode() {
-    if (mode !== "builder" || !selectedNodeId) return;
-    setBuilderNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
-    setBuilderEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+    if (!isEditorActive || !selectedNodeId) return;
+    setEditorNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+    setEditorEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
     setSelectedNodeId(null);
     setNotice("Node removed.");
   }
 
-  /* ── builder: delete selected edge ── */
   function deleteSelectedEdge() {
-    if (mode !== "builder" || !selectedEdgeId) return;
-    setBuilderEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
+    if (!isEditorActive || !selectedEdgeId) return;
+    setEditorEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
     setSelectedEdgeId(null);
     setNotice("Edge removed.");
   }
 
-  /* ── builder: update a FlowNode property (from details panel) ── */
-  function updateBuilderNodeData(nodeId: string, updater: (fn: FlowNode) => FlowNode) {
-    setBuilderNodes((nds) =>
-      nds.map((n) => {
-        if (n.id !== nodeId) return n;
-        const updated = updater(n.data.flowNode);
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            title: "title" in updated ? updated.title : updated.type,
-            subtitle: nodeSubtitle(updated),
-            flowNode: updated
-          }
-        };
-      })
-    );
+  function updateEditorNodeData(nodeId: string, updater: (fn: FlowNode) => FlowNode) {
+    setEditorNodes((nds) => nds.map((n) => {
+      if (n.id !== nodeId) return n;
+      const updated = updater(n.data.flowNode);
+      return { ...n, data: { ...n.data, title: "title" in updated ? updated.title : updated.type, subtitle: nodeSubtitle(updated), flowNode: updated } };
+    }));
   }
 
-  /* ── builder: update edge label ── */
-  function updateBuilderEdgeLabel(edgeId: string, label: string) {
-    setBuilderEdges((eds) =>
-      eds.map((e) => (e.id === edgeId ? { ...e, label: label || undefined } : e))
-    );
+  function updateEditorEdgeLabel(edgeId: string, label: string) {
+    setEditorEdges((eds) => eds.map((e) => (e.id === edgeId ? { ...e, label: label || undefined } : e)));
   }
 
-  /* ── builder: reset ── */
-  function resetBuilderFlow() {
-    setBuilderNodes([]);
-    setBuilderEdges([]);
+  function resetEditorFlow() {
+    setEditorNodes([]); setEditorEdges([]);
+    setSelectedNodeId(null); setSelectedEdgeId(null);
+    setNotice("Editor reset.");
+  }
+
+  /* ── load a generated flow into the editor ── */
+  function openFlowInEditor(spec: FlowSpec) {
+    setEditorNodes(specToRfNodes(spec));
+    setEditorEdges(specToRfEdges(spec));
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
-    setNotice("Builder reset.");
+    setTab("editor");
+    setNotice(`Loaded "${spec.name}" into editor.`);
   }
 
-  /* ── export helpers ── */
-  function getExportSpec(): FlowSpec {
-    if (mode === "builder") {
-      return builderToFlowSpec(builderNodes, builderEdges);
+  /* ── generate flow gameplan ── */
+  async function handleGenerate() {
+    if (!genUrl.trim() || !genBrand.trim()) {
+      setGenError("Please enter a website URL and brand name.");
+      return;
     }
+    setGenBusy(true);
+    setGenError("");
+    setGenStep("analyzing");
+
+    try {
+      // Step 1: analyze brand
+      const analyzeRes = await fetch(`${API_BASE}/api/analyze-brand`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ websiteUrl: genUrl.trim(), brandName: genBrand.trim(), notes: genNotes.trim() || undefined })
+      });
+      if (!analyzeRes.ok) {
+        const err = await analyzeRes.json().catch(() => ({ error: "Brand analysis failed" }));
+        throw new Error(err.error || "Brand analysis failed");
+      }
+      const { profile } = (await analyzeRes.json()) as { profile: BrandProfile };
+
+      // Step 2: generate flows
+      setGenStep("generating");
+      const generateRes = await fetch(`${API_BASE}/api/generate-flows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planKey: genPlan, brandProfile: profile })
+      });
+      if (!generateRes.ok) {
+        const err = await generateRes.json().catch(() => ({ error: "Flow generation failed" }));
+        throw new Error(err.error || "Flow generation failed");
+      }
+      const result = (await generateRes.json()) as GeneratedResult;
+
+      setGenResult(result);
+      setActiveFlowIndex(0);
+      setGenStep("done");
+    } catch (error) {
+      setGenError(error instanceof Error ? error.message : "Something went wrong.");
+      setGenStep("form");
+    } finally {
+      setGenBusy(false);
+    }
+  }
+
+  /* ── export ── */
+  function getExportSpec(): FlowSpec {
+    if (isEditorActive) return editorToFlowSpec(editorNodes, editorEdges);
     return viewerSpec;
   }
 
   function handleExportJson() {
     const spec = getExportSpec();
-    downloadBlob(
-      new Blob([JSON.stringify(spec, null, 2)], { type: "application/json;charset=utf-8" }),
-      `${spec.id}.json`
-    );
+    downloadBlob(new Blob([JSON.stringify(spec, null, 2)], { type: "application/json;charset=utf-8" }), `${spec.id}.json`);
     setNotice("Exported JSON.");
+  }
+
+  function handleExportAllJson() {
+    if (!genResult) return;
+    downloadBlob(
+      new Blob([JSON.stringify(genResult.flows, null, 2)], { type: "application/json;charset=utf-8" }),
+      `${genResult.planKey}_all_flows.json`
+    );
+    setNotice("Exported all flows.");
   }
 
   async function handleExportPng() {
     if (!canvasCaptureRef.current) return;
     setBusyPngExport(true);
     try {
-      const dataUrl = await toPng(canvasCaptureRef.current, {
-        cacheBust: true,
-        backgroundColor: "#f4f7fc",
-        pixelRatio: 2
-      });
-      const anchor = document.createElement("a");
-      anchor.href = dataUrl;
-      anchor.download = `${getExportSpec().id}.png`;
-      anchor.click();
+      const dataUrl = await toPng(canvasCaptureRef.current, { cacheBust: true, backgroundColor: "#f4f7fc", pixelRatio: 2 });
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `${getExportSpec().id}.png`;
+      a.click();
       setNotice("Exported PNG.");
-    } catch {
-      setNotice("PNG export failed.");
-    } finally {
-      setBusyPngExport(false);
-    }
+    } catch { setNotice("PNG export failed."); }
+    finally { setBusyPngExport(false); }
   }
 
   async function handleImportJson(event: ChangeEvent<HTMLInputElement>) {
@@ -398,108 +448,157 @@ export default function App() {
     try {
       const text = await file.text();
       const parsed = parseFlowSpec(JSON.parse(text));
-      const positions = parsed.ui?.nodePositions ?? {};
-      if (mode === "builder") {
-        const imported = parsed.nodes.map((fn, i) => toRfNode(fn, positions[fn.id] ?? { x: 120 + (i % 3) * 260, y: 100 + Math.floor(i / 3) * 160 }));
-        const importedEdges: Edge[] = parsed.edges.map((e) => ({
-          id: e.id,
-          source: e.from,
-          target: e.to,
-          label: e.label,
-          ...EDGE_STYLE
-        }));
-        setBuilderNodes(imported);
-        setBuilderEdges(importedEdges);
+      if (isEditorActive) {
+        setEditorNodes(specToRfNodes(parsed));
+        setEditorEdges(specToRfEdges(parsed));
       } else {
         setCustomViewerSpec(parsed);
-        setChoice("custom");
+        setViewerChoice("custom");
       }
-      setSelectedNodeId(null);
-      setSelectedEdgeId(null);
+      setSelectedNodeId(null); setSelectedEdgeId(null);
       setNotice("Imported JSON.");
-    } catch {
-      setNotice("Invalid JSON or flow schema.");
-    } finally {
-      event.target.value = "";
-    }
+    } catch { setNotice("Invalid JSON or flow schema."); }
+    finally { event.target.value = ""; }
   }
 
   async function handleExportMiro() {
-    if (!miroBoardId.trim() || !miroToken.trim()) {
-      setNotice("Enter Miro board ID and token.");
-      return;
-    }
+    if (!miroBoardId.trim() || !miroToken.trim()) { setNotice("Enter Miro board ID and token."); return; }
     setBusyMiroExport(true);
     try {
       const spec = getExportSpec();
-      const result = await exportFlowToMiro({
-        boardId: miroBoardId.trim(),
-        accessToken: miroToken.trim(),
-        flowSpec: spec,
-        positionOverrides: spec.ui?.nodePositions ?? {}
-      });
+      const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: spec.ui?.nodePositions ?? {} });
       setNotice(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
     } catch (error) {
-      if (typeof error === "object" && error && "status" in error) {
-        setNotice(`Miro export failed (status ${(error as { status: number }).status}).`);
-      } else {
-        setNotice("Miro export failed.");
-      }
-    } finally {
-      setBusyMiroExport(false);
-    }
+      setNotice(typeof error === "object" && error && "status" in error ? `Miro export failed (${(error as { status: number }).status}).` : "Miro export failed.");
+    } finally { setBusyMiroExport(false); }
   }
 
-  /* ── render ── */
+  /* ── clear selection on tab switch ── */
+  function switchTab(next: AppTab) {
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setTab(next);
+  }
+
+  /* ═══════════════════════════════════════════════
+     RENDER
+     ═══════════════════════════════════════════════ */
   return (
     <ReactFlowProvider>
       <div className="shell">
+        {/* ── sidebar ── */}
         <aside className="sidebar">
           <h1>Flow Gameplan</h1>
-          <button type="button" className={`sidebar-btn ${mode === "viewer" ? "active" : ""}`} onClick={() => setMode("viewer")}>
+
+          <button type="button" className={`sidebar-btn ${tab === "generate" ? "active" : ""}`} onClick={() => switchTab("generate")}>
+            Generate
+          </button>
+          <button type="button" className={`sidebar-btn ${tab === "viewer" ? "active" : ""}`} onClick={() => switchTab("viewer")}>
             Viewer
           </button>
-          <button type="button" className={`sidebar-btn ${mode === "builder" ? "active" : ""}`} onClick={() => setMode("builder")}>
-            Builder
+          <button type="button" className={`sidebar-btn ${tab === "editor" ? "active" : ""}`} onClick={() => switchTab("editor")}>
+            Editor
           </button>
 
-          {mode === "viewer" ? (
+          {/* ── GENERATE sidebar ── */}
+          {tab === "generate" ? (
+            genStep === "done" && genResult ? (
+              <div className="sidebar-section">
+                <label>Generated flows — {genResult.planName}</label>
+                <small className="hint">{genResult.brandName} · {genResult.flows.length} flows</small>
+                <div className="flow-list">
+                  {genResult.flows.map((flow, idx) => (
+                    <button
+                      key={flow.id}
+                      type="button"
+                      className={`flow-list-item ${idx === activeFlowIndex ? "active" : ""}`}
+                      onClick={() => setActiveFlowIndex(idx)}
+                    >
+                      {flow.name}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="sidebar-btn" onClick={() => openFlowInEditor(genResult.flows[activeFlowIndex])}>
+                  Edit in Editor
+                </button>
+                <button type="button" className="sidebar-btn" onClick={handleExportAllJson}>
+                  Export All (JSON)
+                </button>
+                <button type="button" className="reset-btn" onClick={() => { setGenStep("form"); setGenResult(null); }}>
+                  New generation
+                </button>
+              </div>
+            ) : (
+              <div className="sidebar-section">
+                <label>Plan</label>
+                <select value={genPlan} onChange={(e) => setGenPlan(e.target.value as PlanKey)} disabled={genBusy}>
+                  {PLAN_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+                <small className="hint">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</small>
+
+                <label>Client website URL</label>
+                <input type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
+
+                <label>Brand name</label>
+                <input type="text" placeholder="Brand Name" value={genBrand} onChange={(e) => setGenBrand(e.target.value)} disabled={genBusy} />
+
+                <label>Additional notes (optional)</label>
+                <textarea
+                  className="note-textarea"
+                  rows={3}
+                  placeholder="Products, audience, tone, discount codes..."
+                  value={genNotes}
+                  onChange={(e) => setGenNotes(e.target.value)}
+                  disabled={genBusy}
+                />
+
+                <button type="button" className="generate-btn" onClick={handleGenerate} disabled={genBusy}>
+                  {genBusy
+                    ? genStep === "analyzing" ? "Analyzing brand..." : "Generating flows..."
+                    : "Generate Gameplan"}
+                </button>
+
+                {genError ? <p className="gen-error">{genError}</p> : null}
+              </div>
+            )
+          ) : null}
+
+          {/* ── VIEWER sidebar ── */}
+          {tab === "viewer" ? (
             <div className="sidebar-section">
               <label>Preset</label>
-              <select value={choice} onChange={(e) => setChoice(e.target.value as TemplateChoice)}>
-                {CHOICES.map((c) => (
+              <select value={viewerChoice} onChange={(e) => setViewerChoice(e.target.value as TemplateChoice)}>
+                {VIEWER_CHOICES.map((c) => (
                   <option key={c.value} value={c.value}>{c.label}</option>
                 ))}
               </select>
             </div>
-          ) : (
+          ) : null}
+
+          {/* ── EDITOR sidebar ── */}
+          {tab === "editor" ? (
             <div className="sidebar-section">
-              <label>Builder tools</label>
+              <label>Editor tools</label>
               <div className="tool-grid">
                 {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"] as NodeKind[]).map((kind) => {
                   const label = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
                   return (
-                    <button
-                      key={kind}
-                      type="button"
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("application/flow-node-kind", kind);
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      onClick={() => appendBuilderNode(kind)}
+                    <button key={kind} type="button" draggable
+                      onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
+                      onClick={() => appendEditorNode(kind)}
                       className={kind === "note" ? "tool-btn-note" : undefined}
-                    >
-                      + {label}
-                    </button>
+                    >+ {label}</button>
                   );
                 })}
               </div>
-              <button type="button" className="reset-btn" onClick={resetBuilderFlow}>Reset builder</button>
+              <button type="button" className="reset-btn" onClick={resetEditorFlow}>Reset editor</button>
               <small className="hint">Drag a tool onto canvas or click to append.</small>
             </div>
-          )}
+          ) : null}
 
+          {/* ── Miro export (always visible) ── */}
           <div className="sidebar-section">
             <label>Miro export</label>
             <input type="text" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
@@ -510,6 +609,7 @@ export default function App() {
           </div>
         </aside>
 
+        {/* ── main canvas area ── */}
         <main className="main">
           <header className="toolbar">
             <button type="button" onClick={handleExportJson}>Export JSON</button>
@@ -518,51 +618,65 @@ export default function App() {
             </button>
             <button type="button" onClick={() => importInputRef.current?.click()}>Import JSON</button>
             <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden-input" onChange={handleImportJson} />
-            <span className="mode-pill">{mode === "viewer" ? "Viewer mode" : "Builder mode"}</span>
+            <span className="mode-pill">
+              {tab === "generate" ? "Generate" : tab === "viewer" ? "Viewer" : "Editor"}
+            </span>
             {notice ? <span className="notice">{notice}</span> : null}
           </header>
 
           <div className="canvas-wrap" ref={canvasCaptureRef}>
-            <ReactFlow
-              onInit={(instance) => { reactFlowRef.current = instance; }}
-              nodes={flowNodes}
-              edges={flowEdges}
-              nodeTypes={nodeTypes}
-              fitView
-              nodesDraggable={mode === "builder"}
-              nodesConnectable={mode === "builder"}
-              elementsSelectable
-              onNodesChange={handleNodesChange}
-              onEdgesChange={handleEdgesChange}
-              onConnect={handleConnect}
-              onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
-              onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
-              onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
-              onDragOver={(event) => {
-                if (mode !== "builder") return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-              }}
-              onDrop={(event) => {
-                if (mode !== "builder" || !reactFlowRef.current) return;
-                event.preventDefault();
-                const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"];
-                if (!allowed.includes(rawKind as NodeKind)) return;
-                const position = reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-                appendBuilderNode(rawKind as NodeKind, position);
-              }}
-              deleteKeyCode={mode === "builder" ? "Delete" : null}
-              panOnDrag
-              defaultEdgeOptions={{
-                type: "default",
-                ...EDGE_STYLE
-              }}
-            >
-              <Background color="#d6deef" gap={24} />
-              <MiniMap pannable zoomable />
-              <Controls />
-            </ReactFlow>
+            {tab === "generate" && genStep !== "done" ? (
+              <div className="generate-placeholder">
+                <div className="gen-placeholder-inner">
+                  {genBusy ? (
+                    <>
+                      <div className="gen-spinner" />
+                      <p>{genStep === "analyzing" ? "Analyzing brand website..." : "Generating tailored flows..."}</p>
+                      <small>This may take 30-60 seconds depending on the plan size.</small>
+                    </>
+                  ) : (
+                    <>
+                      <h2>Generate a Flow Gameplan</h2>
+                      <p>Fill in the client details in the sidebar and click <b>Generate Gameplan</b>.</p>
+                      <p>The platform will analyze the brand and create a complete set of tailored email/SMS flows.</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ReactFlow
+                onInit={(inst) => { reactFlowRef.current = inst; }}
+                nodes={flowNodes}
+                edges={flowEdges}
+                nodeTypes={nodeTypes}
+                fitView
+                nodesDraggable={isEditorActive}
+                nodesConnectable={isEditorActive}
+                elementsSelectable
+                onNodesChange={handleNodesChange}
+                onEdgesChange={handleEdgesChange}
+                onConnect={handleConnect}
+                onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
+                onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
+                onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+                onDragOver={(event) => { if (!isEditorActive) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+                onDrop={(event) => {
+                  if (!isEditorActive || !reactFlowRef.current) return;
+                  event.preventDefault();
+                  const rawKind = event.dataTransfer.getData("application/flow-node-kind");
+                  const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"];
+                  if (!allowed.includes(rawKind as NodeKind)) return;
+                  appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+                }}
+                deleteKeyCode={isEditorActive ? "Delete" : null}
+                panOnDrag
+                defaultEdgeOptions={{ type: "default", ...EDGE_STYLE }}
+              >
+                <Background color="#d6deef" gap={24} />
+                <MiniMap pannable zoomable />
+                <Controls />
+              </ReactFlow>
+            )}
           </div>
         </main>
 
@@ -577,72 +691,40 @@ export default function App() {
               <p><b>Type:</b> {selectedFlowNode.type}</p>
 
               {"title" in selectedFlowNode ? (
-                <label>
-                  Title
-                  <input
-                    value={selectedFlowNode.title}
-                    disabled={mode !== "builder"}
-                    onChange={(e) => {
-                      if (mode !== "builder") return;
-                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
-                        "title" in fn ? { ...fn, title: e.target.value } : fn
-                      );
-                    }}
-                  />
+                <label>Title
+                  <input value={selectedFlowNode.title} disabled={!isEditorActive}
+                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => "title" in fn ? { ...fn, title: e.target.value } : fn); }} />
                 </label>
               ) : null}
 
               {"event" in selectedFlowNode ? (
-                <label>
-                  Trigger event
-                  <input
-                    value={selectedFlowNode.event}
-                    disabled={mode !== "builder"}
-                    onChange={(e) => {
-                      if (mode !== "builder") return;
-                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
-                        fn.type === "trigger" ? { ...fn, event: e.target.value } : fn
-                      );
-                    }}
-                  />
+                <label>Trigger event
+                  <input value={selectedFlowNode.event} disabled={!isEditorActive}
+                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "trigger" ? { ...fn, event: e.target.value } : fn); }} />
                 </label>
               ) : null}
 
               {"condition" in selectedFlowNode ? (
-                <label>
-                  Split condition
-                  <input
-                    value={selectedFlowNode.condition}
-                    disabled={mode !== "builder"}
-                    onChange={(e) => {
-                      if (mode !== "builder") return;
-                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
-                        fn.type === "split" ? { ...fn, condition: e.target.value } : fn
-                      );
-                    }}
-                  />
+                <label>Split condition
+                  <input value={selectedFlowNode.condition} disabled={!isEditorActive}
+                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "split" ? { ...fn, condition: e.target.value } : fn); }} />
                 </label>
               ) : null}
 
               {"body" in selectedFlowNode ? (
-                <label>
-                  Body
-                  <textarea
-                    className="note-textarea"
-                    value={selectedFlowNode.body}
-                    disabled={mode !== "builder"}
-                    rows={6}
-                    onChange={(e) => {
-                      if (mode !== "builder") return;
-                      updateBuilderNodeData(selectedFlowNode.id, (fn) =>
-                        fn.type === "note" ? { ...fn, body: e.target.value } : fn
-                      );
-                    }}
-                  />
+                <label>Body
+                  <textarea className="note-textarea" value={selectedFlowNode.body} disabled={!isEditorActive} rows={6}
+                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "note" ? { ...fn, body: e.target.value } : fn); }} />
                 </label>
               ) : null}
 
-              {mode === "builder" ? (
+              {"copyHint" in selectedFlowNode && selectedFlowNode.copyHint ? (
+                <label>Copy hint
+                  <textarea className="note-textarea" value={selectedFlowNode.copyHint} disabled rows={3} />
+                </label>
+              ) : null}
+
+              {isEditorActive ? (
                 <button type="button" className="danger" onClick={deleteSelectedNode}>Delete node</button>
               ) : null}
             </div>
@@ -651,18 +733,11 @@ export default function App() {
           {selectedEdge ? (
             <div className="details">
               <p><b>Edge:</b> {selectedEdge.id}</p>
-              <label>
-                Label
-                <input
-                  value={selectedEdge.label ?? ""}
-                  disabled={mode !== "builder"}
-                  onChange={(e) => {
-                    if (mode !== "builder") return;
-                    updateBuilderEdgeLabel(selectedEdge.id, e.target.value);
-                  }}
-                />
+              <label>Label
+                <input value={selectedEdge.label ?? ""} disabled={!isEditorActive}
+                  onChange={(e) => { if (!isEditorActive) return; updateEditorEdgeLabel(selectedEdge.id, e.target.value); }} />
               </label>
-              {mode === "builder" ? (
+              {isEditorActive ? (
                 <button type="button" className="danger" onClick={deleteSelectedEdge}>Delete edge</button>
               ) : null}
             </div>
