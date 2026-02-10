@@ -1,6 +1,6 @@
 :root {
   font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
-  color: #e9ecf8;
+  color: #12213d;
 }
 
 * {
@@ -9,49 +9,53 @@
 
 body {
   margin: 0;
-  background: #0d1322;
+  background: #f6f8fc;
 }
 
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 250px 1fr 320px;
-  background: linear-gradient(180deg, #0e1322 0%, #151c30 100%);
+  grid-template-columns: 260px 1fr 320px;
+  background: #f6f8fc;
 }
 
 .sidebar {
-  border-right: 1px solid #2c3554;
+  border-right: 1px solid #d6deec;
   padding: 18px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  background: #fff;
 }
 
 .sidebar h1 {
   margin: 0 0 10px;
   font-size: 20px;
+  color: #071738;
 }
 
 .sidebar-btn {
   height: 38px;
-  border: 1px solid #3e4a74;
-  background: #182342;
-  border-radius: 8px;
-  color: #e9ecf8;
+  border: 1px solid #d0d9eb;
+  background: #fff;
+  border-radius: 10px;
+  color: #0f2448;
   text-align: left;
-  padding: 0 10px;
+  padding: 0 12px;
   cursor: pointer;
+  font-weight: 600;
 }
 
 .sidebar-btn.active {
-  border-color: #6f8cff;
-  background: #24345f;
+  border-color: #1f53ff;
+  background: #eef3ff;
+  color: #14368f;
 }
 
 .sidebar-section {
-  margin-top: 12px;
+  margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #2c3554;
+  border-top: 1px solid #e7ecf6;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -59,7 +63,8 @@ body {
 
 .sidebar-section label {
   font-size: 12px;
-  color: #aeb7d4;
+  color: #4a5c81;
+  font-weight: 600;
 }
 
 .sidebar input,
@@ -67,11 +72,11 @@ body {
 .toolbar button,
 .sidebar button,
 .panel input {
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid #3e4a74;
-  background: #131b32;
-  color: #e9ecf8;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid #d3ddee;
+  background: #fff;
+  color: #132343;
   padding: 0 10px;
 }
 
@@ -84,6 +89,12 @@ body {
 .tool-grid button,
 .reset-btn {
   cursor: pointer;
+  font-weight: 600;
+}
+
+.hint {
+  color: #63769b;
+  font-size: 11px;
 }
 
 .main {
@@ -97,35 +108,106 @@ body {
   gap: 8px;
   align-items: center;
   padding: 10px;
-  border-bottom: 1px solid #2c3554;
+  border-bottom: 1px solid #d9e1f0;
+  background: #fff;
 }
 
 .toolbar button {
   cursor: pointer;
-  background: #1b2748;
+  background: #1f53ff;
+  color: #fff;
+  border-color: #1f53ff;
+  font-weight: 600;
+}
+
+.mode-pill {
+  margin-left: auto;
+  background: #eef3ff;
+  color: #284ea6;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .notice {
-  margin-left: 6px;
+  margin-left: 8px;
   font-size: 13px;
-  color: #9ce5b3;
+  color: #1d7a3b;
+  font-weight: 600;
 }
 
 .canvas-wrap {
-  background: #f2f3f7;
+  background: #f4f7fc;
 }
 
 .canvas-wrap .react-flow__attribution {
   display: none;
 }
 
+.canvas-node {
+  min-width: 210px;
+  max-width: 280px;
+  border: 1px solid #ccd6e8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(17, 41, 92, 0.08);
+}
+
+.canvas-node.selected {
+  border-color: #1f53ff;
+  box-shadow: 0 0 0 2px rgba(31, 83, 255, 0.15);
+}
+
+.canvas-node-trigger {
+  border-left: 4px solid #7e9cff;
+}
+
+.canvas-node-split {
+  border-left: 4px solid #b08ae6;
+}
+
+.canvas-node-wait {
+  border-left: 4px solid #95a3bc;
+}
+
+.canvas-node-message {
+  border-left: 4px solid #5b8eff;
+}
+
+.canvas-node-outcome {
+  border-left: 4px solid #70b98b;
+}
+
+.node-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #102345;
+}
+
+.node-subtitle {
+  font-size: 12px;
+  color: #566789;
+  margin-top: 4px;
+}
+
+.node-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: #6f7b91 !important;
+  border: 1px solid #fff !important;
+}
+
 .panel {
-  border-left: 1px solid #2c3554;
+  border-left: 1px solid #d6deec;
   padding: 14px;
+  background: #fff;
 }
 
 .panel h2 {
   margin: 0 0 10px;
+  color: #0c1f43;
 }
 
 .details {
@@ -137,6 +219,7 @@ body {
 .details p {
   margin: 0;
   font-size: 13px;
+  color: #20365f;
 }
 
 .details label {
@@ -144,12 +227,14 @@ body {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+  color: #4a5c81;
+  font-weight: 600;
 }
 
 .danger {
-  border: 1px solid #74435a !important;
-  background: #4b2432 !important;
-  color: #ffd9de !important;
+  border: 1px solid #d56b8a !important;
+  background: #fff4f7 !important;
+  color: #8f2646 !important;
   cursor: pointer;
 }
 
