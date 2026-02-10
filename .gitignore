@@ -1,5 +1,4 @@
 node_modules/
 **/node_modules/
-packages/core/node_modules/
 libs/core/node_modules/
 apps/web/dist/
