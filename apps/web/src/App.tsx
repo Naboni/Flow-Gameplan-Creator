@@ -63,7 +63,7 @@ type GeneratedResult = {
 
 /* ── constants ── */
 
-const API_BASE = "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 const EDGE_STYLE = {
   markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
@@ -481,9 +481,6 @@ function AppInner() {
       }
       const result = (await generateRes.json()) as GeneratedResult;
 
-      console.log("Generation result:", result);
-      console.log("First flow:", result.flows?.[0]);
-
       if (!result.flows || result.flows.length === 0) {
         throw new Error("No flows were generated.");
       }
@@ -561,7 +558,7 @@ function AppInner() {
       if (result.success) {
         spec = result.data;
       } else {
-        console.warn("Strict parse failed, using raw data:", result.error.issues);
+        // Strict Zod parse failed; use raw data (generated flows may have extra fields)
         // Use raw data directly (generated flows may have extra fields)
         spec = single as FlowSpec;
       }
