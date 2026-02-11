@@ -63,7 +63,7 @@ type GeneratedResult = {
 
 /* ── constants ── */
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/, "");
 
 const EDGE_STYLE = {
   markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
