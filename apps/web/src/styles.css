@@ -278,6 +278,91 @@ body {
   word-break: break-word;
 }
 
+/* ── strategy card ── */
+
+.flow-strategy {
+  border-radius: 12px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  border: 2px solid transparent;
+}
+
+.flow-strategy:active {
+  cursor: grabbing;
+}
+
+.flow-strategy--yes {
+  border-color: #f97316;
+}
+
+.flow-strategy--no {
+  border-color: #3b82f6;
+}
+
+.flow-strategy--selected {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.flow-strategy__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.flow-strategy__header--yes {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
+.flow-strategy__header--no {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.flow-strategy__header-icon {
+  display: flex;
+  align-items: center;
+  opacity: 0.9;
+}
+
+.flow-strategy__body {
+  background: #fff;
+  padding: 14px 16px;
+}
+
+.flow-strategy__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ea580c;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.flow-strategy__label--secondary {
+  color: #ea580c;
+  margin-top: 12px;
+}
+
+.flow-strategy--no .flow-strategy__label {
+  color: #2563eb;
+}
+
+.flow-strategy__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #334155;
+}
+
 /* ── handles ── */
 
 .flow-handle {
@@ -302,6 +387,15 @@ body {
 .flow-handle--note:hover {
   background: #b45309 !important;
   box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.25);
+}
+
+.flow-handle--strategy {
+  background: #f97316 !important;
+}
+
+.flow-handle--strategy:hover {
+  background: #ea580c !important;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.25);
 }
 
 .panel {
@@ -347,6 +441,12 @@ body {
   background: #fff3e0 !important;
   border-color: #f5c17b !important;
   color: #8b4513 !important;
+}
+
+.tool-btn-strategy {
+  background: linear-gradient(135deg, #fff7ed, #ffedd5) !important;
+  border-color: #f97316 !important;
+  color: #c2410c !important;
 }
 
 .note-textarea {

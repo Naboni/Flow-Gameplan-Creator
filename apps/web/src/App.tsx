@@ -34,7 +34,7 @@ import { toPng } from "html-to-image";
 type AppTab = "generate" | "viewer" | "editor";
 type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
 type PlanKey = "core-foundation" | "growth-engine" | "full-system";
-type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note";
+type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note" | "strategy";
 
 type AppNodeData = {
   title: string;
@@ -124,6 +124,11 @@ const NodeIcons = {
       <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"/>
     </svg>
   ),
+  strategy: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4m-8.66-15l3.46 2m10.4 6l3.46 2m-17.32 2l3.46-2m10.4-6l3.46-2"/>
+    </svg>
+  ),
 };
 
 /* ── helpers ── */
@@ -145,6 +150,7 @@ function nodeSubtitle(node: FlowNode): string {
   if (node.type === "split") return node.condition;
   if (node.type === "trigger") return node.event;
   if (node.type === "note") return node.body;
+  if (node.type === "strategy") return node.primaryFocus;
   return node.type;
 }
 
@@ -166,6 +172,7 @@ function createFlowNode(kind: NodeKind): FlowNode {
   if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: { yes: "Yes", no: "No" } };
   if (kind === "profileFilter") return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
   if (kind === "note") return { id, type: "note", title: "OBJECTIVE/FOCUS:", body: "Describe the objective here..." };
+  if (kind === "strategy") return { id, type: "strategy", title: "STRATEGY", primaryFocus: "Primary focus...", secondaryFocus: "Secondary focus..." };
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
@@ -254,6 +261,26 @@ function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]): FlowSp
 
 function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   const fn = data.flowNode;
+
+  /* ── strategy node ── */
+  if (fn.type === "strategy") {
+    const branch = fn.branchLabel ?? "yes";
+    return (
+      <div className={`flow-strategy flow-strategy--${branch} ${selected ? "flow-strategy--selected" : ""}`}>
+        <div className={`flow-strategy__header flow-strategy__header--${branch}`}>
+          <div className="flow-strategy__header-icon">{NodeIcons.strategy}</div>
+          <span>{data.title}</span>
+        </div>
+        <div className="flow-strategy__body">
+          <div className="flow-strategy__label">PRIMARY FOCUS</div>
+          <p className="flow-strategy__text">{fn.primaryFocus}</p>
+          <div className="flow-strategy__label flow-strategy__label--secondary">SECONDARY FOCUS</div>
+          <p className="flow-strategy__text">{fn.secondaryFocus}</p>
+        </div>
+        <Handle type="source" position={Position.Right} className="flow-handle flow-handle--strategy" />
+      </div>
+    );
+  }
 
   /* ── note node ── */
   if (fn.type === "note") {
@@ -785,13 +812,13 @@ function AppInner() {
             <div className="sidebar-section">
               <label>Editor tools</label>
               <div className="tool-grid">
-                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"] as NodeKind[]).map((kind) => {
+                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"] as NodeKind[]).map((kind) => {
                   const label = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
                   return (
                     <button key={kind} type="button" draggable
                       onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
                       onClick={() => appendEditorNode(kind)}
-                      className={kind === "note" ? "tool-btn-note" : undefined}
+                      className={kind === "note" ? "tool-btn-note" : kind === "strategy" ? "tool-btn-strategy" : undefined}
                     >+ {label}</button>
                   );
                 })}
@@ -868,7 +895,7 @@ function AppInner() {
                   if (!isEditorActive || !reactFlowRef.current) return;
                   event.preventDefault();
                   const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                  const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note"];
+                  const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"];
                   if (!allowed.includes(rawKind as NodeKind)) return;
                   appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
                 }}
@@ -926,6 +953,22 @@ function AppInner() {
                 <label>Copy hint
                   <textarea className="note-textarea" value={selectedFlowNode.copyHint} disabled rows={3} />
                 </label>
+              ) : null}
+
+              {"primaryFocus" in selectedFlowNode ? (
+                <>
+                  <label>Primary focus
+                    <textarea className="note-textarea" value={selectedFlowNode.primaryFocus} disabled={!isEditorActive} rows={3}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, primaryFocus: e.target.value } : fn); }} />
+                  </label>
+                  <label>Secondary focus
+                    <textarea className="note-textarea" value={selectedFlowNode.secondaryFocus} disabled={!isEditorActive} rows={3}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, secondaryFocus: e.target.value } : fn); }} />
+                  </label>
+                  {"branchLabel" in selectedFlowNode && selectedFlowNode.branchLabel ? (
+                    <p><b>Branch:</b> {selectedFlowNode.branchLabel === "yes" ? "Yes (purchaser)" : "No (non-purchaser)"}</p>
+                  ) : null}
+                </>
               ) : null}
 
               {isEditorActive ? (

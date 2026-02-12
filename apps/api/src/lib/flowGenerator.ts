@@ -42,6 +42,11 @@ type NoteContent = {
   attachToStep: number;
 };
 
+type StrategyContent = {
+  primaryFocus: string;
+  secondaryFocus: string;
+};
+
 type GeneratedFlowContent = {
   flowName: string;
   triggerDescription: string;
@@ -54,6 +59,10 @@ type GeneratedFlowContent = {
   notes: NoteContent[];
   /** Wait durations between steps */
   waitDurations: Array<{ value: number; unit: "hours" | "days" }>;
+  /** Strategy for the yes/main branch */
+  yesStrategy?: StrategyContent;
+  /** Strategy for the no branch */
+  noStrategy?: StrategyContent;
 };
 
 /* ── FlowSpec-compatible output types ── */
@@ -65,7 +74,8 @@ type FlowNode =
   | { id: string; type: "wait"; duration: { value: number; unit: "minutes" | "hours" | "days" } }
   | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string }
   | { id: string; type: "outcome"; title: string; result: string }
-  | { id: string; type: "note"; title: string; body: string };
+  | { id: string; type: "note"; title: string; body: string }
+  | { id: string; type: "strategy"; title: string; primaryFocus: string; secondaryFocus: string; branchLabel?: "yes" | "no" };
 
 type FlowEdge = {
   id: string;
@@ -128,6 +138,9 @@ INSTRUCTIONS:
 3. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
 4. Provide 2-4 OBJECTIVE/FOCUS notes that describe the strategic purpose of key steps. Each note should reference which step number it's about (1-indexed).
 5. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
+6. ${blueprint.hasSplit
+    ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
+    : "Provide a STRATEGY for the main flow with primaryFocus and secondaryFocus."}
 
 Return ONLY valid JSON matching this exact schema:
 {
@@ -137,12 +150,14 @@ Return ONLY valid JSON matching this exact schema:
   "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined" }],
   "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined" }],
   "notes": [{ "title": "OBJECTIVE/FOCUS:", "body": "string", "attachToStep": number }],
-  "waitDurations": [{ "value": number, "unit": "hours|days" }]
+  "waitDurations": [{ "value": number, "unit": "hours|days" }],
+  "yesStrategy": { "primaryFocus": "string", "secondaryFocus": "string" },
+  "noStrategy": { "primaryFocus": "string", "secondaryFocus": "string" }
 }
 
 ${blueprint.hasSplit
-    ? "yesSteps should have the steps for the Yes/purchaser branch. noSteps for the No/non-purchaser branch."
-    : "Put all steps in yesSteps. Leave noSteps as an empty array."}`;
+    ? "yesSteps should have the steps for the Yes/purchaser branch. noSteps for the No/non-purchaser branch. yesStrategy is for the Yes branch, noStrategy for the No branch."
+    : "Put all steps in yesSteps. Leave noSteps as an empty array. Put the strategy in yesStrategy. Set noStrategy to null."}`;
 }
 
 /* ── FlowSpec assembler ── */
@@ -301,10 +316,59 @@ function assembleFlowSpec(
       title: content.notes[i].title,
       body: content.notes[i].body
     });
-    // Connect note to the corresponding message step (note_1 → step_1, etc.)
     const targetStepId = messageStepIds[i];
     if (targetStepId) {
       edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
+    }
+  }
+
+  // Add strategy nodes per branch (connected to the first message of each branch)
+  if (blueprint.hasSplit && blueprint.splitSegments) {
+    // YES branch strategy → first yes message
+    if (content.yesStrategy) {
+      const yesStratId = `${blueprint.flowId}_strategy_yes`;
+      const firstYesMsg = nodes.find((n) => n.id === `${blueprint.flowId}_yes_1`);
+      nodes.push({
+        id: yesStratId,
+        type: "strategy",
+        title: "STRATEGY",
+        primaryFocus: content.yesStrategy.primaryFocus,
+        secondaryFocus: content.yesStrategy.secondaryFocus,
+        branchLabel: "yes"
+      });
+      if (firstYesMsg) {
+        edges.push({ id: nextEdgeId(), from: yesStratId, to: firstYesMsg.id });
+      }
+    }
+    // NO branch strategy → first no message
+    if (content.noStrategy) {
+      const noStratId = `${blueprint.flowId}_strategy_no`;
+      const firstNoMsg = nodes.find((n) => n.id === `${blueprint.flowId}_no_1`);
+      nodes.push({
+        id: noStratId,
+        type: "strategy",
+        title: "STRATEGY",
+        primaryFocus: content.noStrategy.primaryFocus,
+        secondaryFocus: content.noStrategy.secondaryFocus,
+        branchLabel: "no"
+      });
+      if (firstNoMsg) {
+        edges.push({ id: nextEdgeId(), from: noStratId, to: firstNoMsg.id });
+      }
+    }
+  } else if (content.yesStrategy) {
+    // Linear flow: single strategy connected to the first message
+    const stratId = `${blueprint.flowId}_strategy`;
+    const firstMsg = nodes.find((n) => n.type === "message");
+    nodes.push({
+      id: stratId,
+      type: "strategy",
+      title: "STRATEGY",
+      primaryFocus: content.yesStrategy.primaryFocus,
+      secondaryFocus: content.yesStrategy.secondaryFocus
+    });
+    if (firstMsg) {
+      edges.push({ id: nextEdgeId(), from: stratId, to: firstMsg.id });
     }
   }
 
@@ -415,6 +479,11 @@ function buildFallbackContent(
     unit: (i === 0 ? "hours" : "days") as "hours" | "days"
   }));
 
+  const yesStrategy: StrategyContent = {
+    primaryFocus: `Engage ${brand.brandName} customers through the ${blueprint.name} flow.`,
+    secondaryFocus: `Reinforce brand value and drive conversions using ${brand.keyProducts.slice(0, 2).join(" and ")}.`
+  };
+
   return {
     flowName: blueprint.name,
     triggerDescription: blueprint.triggerEvent,
@@ -422,7 +491,12 @@ function buildFallbackContent(
     yesSteps,
     noSteps,
     notes: [{ title: "OBJECTIVE/FOCUS:", body: `${blueprint.name} flow for ${brand.brandName}`, attachToStep: 1 }],
-    waitDurations: waits
+    waitDurations: waits,
+    yesStrategy,
+    noStrategy: blueprint.hasSplit ? {
+      primaryFocus: `Convert first-time ${brand.brandName} visitors into customers.`,
+      secondaryFocus: `Build trust and brand awareness for new subscribers.`
+    } : undefined
   };
 }
 
@@ -460,6 +534,20 @@ function validateAndFixCounts(
 
   if (!content.notes || content.notes.length === 0) {
     content.notes = [{ title: "OBJECTIVE/FOCUS:", body: content.flowName, attachToStep: 1 }];
+  }
+
+  if (!content.yesStrategy) {
+    content.yesStrategy = {
+      primaryFocus: `Drive engagement through the ${content.flowName} flow.`,
+      secondaryFocus: "Reinforce brand value and move subscribers toward conversion."
+    };
+  }
+
+  if (blueprint.hasSplit && !content.noStrategy) {
+    content.noStrategy = {
+      primaryFocus: "Convert new visitors into first-time customers.",
+      secondaryFocus: "Build trust and establish brand credibility."
+    };
   }
 
   return content;

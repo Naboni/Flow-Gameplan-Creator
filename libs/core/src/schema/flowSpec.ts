@@ -101,6 +101,15 @@ const noteNodeSchema = z.object({
   body: z.string().min(1)
 });
 
+const strategyNodeSchema = z.object({
+  id: nodeIdSchema,
+  type: z.literal("strategy"),
+  title: z.string().min(1),
+  primaryFocus: z.string().min(1),
+  secondaryFocus: z.string().min(1),
+  branchLabel: z.enum(["yes", "no"]).optional()
+});
+
 export const flowNodeSchema = z.discriminatedUnion("type", [
   triggerNodeSchema,
   profileFilterNodeSchema,
@@ -108,7 +117,8 @@ export const flowNodeSchema = z.discriminatedUnion("type", [
   waitNodeSchema,
   messageNodeSchema,
   outcomeNodeSchema,
-  noteNodeSchema
+  noteNodeSchema,
+  strategyNodeSchema
 ]);
 export type FlowNode = z.infer<typeof flowNodeSchema>;
 

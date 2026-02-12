@@ -54,7 +54,8 @@ const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }>
   wait: { width: 140, height: 56 },
   message: { width: 300, height: 150 },
   outcome: { width: 260, height: 90 },
-  note: { width: 320, height: 160 }
+  note: { width: 320, height: 160 },
+  strategy: { width: 320, height: 200 }
 };
 
 function labelSortScore(label?: string): number {
@@ -107,28 +108,27 @@ export function buildLayout(
     return { nodes: [], edges: [] };
   }
 
-  /* ── Separate note nodes from main flow nodes ── */
-  const noteNodes: FlowNode[] = [];
+  /* ── Separate side nodes (note, strategy) from main flow nodes ── */
+  const sideNodes: FlowNode[] = [];
   const mainNodes: FlowNode[] = [];
-  const noteIds = new Set<string>();
+  const sideNodeIds = new Set<string>();
 
   for (const node of spec.nodes) {
-    if (node.type === "note") {
-      noteNodes.push(node);
-      noteIds.add(node.id);
+    if (node.type === "note" || node.type === "strategy") {
+      sideNodes.push(node);
+      sideNodeIds.add(node.id);
     } else {
       mainNodes.push(node);
     }
   }
 
-  // Build note→target map: for each note, find the node it connects TO
-  const noteTargetMap = new Map<string, string>();
+  // Build side-node→target map: for each side node, find the node it connects TO
+  const sideTargetMap = new Map<string, string>();
   const mainEdges: FlowEdge[] = [];
 
   for (const edge of spec.edges) {
-    if (noteIds.has(edge.from)) {
-      // This is a note→target edge; record the mapping but exclude from main layout
-      noteTargetMap.set(edge.from, edge.to);
+    if (sideNodeIds.has(edge.from)) {
+      sideTargetMap.set(edge.from, edge.to);
     } else {
       mainEdges.push(edge);
     }
@@ -310,37 +310,48 @@ export function buildLayout(
     }
   }
 
-  /* ── Position note nodes: place to the left of their target ── */
+  /* ── Position side nodes (note/strategy): place beside their target ── */
   const positionedById = new Map(positionedNodes.map((n) => [n.id, n]));
-  const NOTE_LEFT_OFFSET = -380; // offset to the left of the target
+  const SIDE_LEFT_OFFSET = -380;
+  const SIDE_RIGHT_GAP = 60;
 
-  for (const note of noteNodes) {
-    const targetId = noteTargetMap.get(note.id);
+  for (const sideNode of sideNodes) {
+    const targetId = sideTargetMap.get(sideNode.id);
     const targetPositioned = targetId ? positionedById.get(targetId) : undefined;
-    const size = NODE_SIZE_MAP.note;
+    const size = NODE_SIZE_MAP[sideNode.type];
 
     if (targetPositioned) {
-      // Place note to the left of its target, same Y
+      // Strategy nodes on "no" branch go to the RIGHT of their target
+      const placeRight =
+        sideNode.type === "strategy" &&
+        "branchLabel" in sideNode &&
+        sideNode.branchLabel === "no" &&
+        targetPositioned.lane > 0;
+
+      const xPos = placeRight
+        ? targetPositioned.x + targetPositioned.width + SIDE_RIGHT_GAP
+        : targetPositioned.x + SIDE_LEFT_OFFSET;
+
       positionedNodes.push({
-        id: note.id,
-        type: "note",
-        title: "title" in note ? note.title : "Note",
+        id: sideNode.id,
+        type: sideNode.type,
+        title: "title" in sideNode ? sideNode.title : sideNode.type,
         width: size.width,
         height: size.height,
-        x: targetPositioned.x + NOTE_LEFT_OFFSET,
+        x: xPos,
         y: targetPositioned.y,
         depth: targetPositioned.depth,
-        lane: targetPositioned.lane - 1
+        lane: placeRight ? targetPositioned.lane + 1 : targetPositioned.lane - 1
       });
     } else {
-      // Disconnected note: place below the last positioned node
+      // Disconnected side node: place below the last positioned node
       const maxY = positionedNodes.length > 0
         ? Math.max(...positionedNodes.map((n) => n.y)) + resolved.rowSpacing
         : 0;
       positionedNodes.push({
-        id: note.id,
-        type: "note",
-        title: "title" in note ? note.title : "Note",
+        id: sideNode.id,
+        type: sideNode.type,
+        title: "title" in sideNode ? sideNode.title : sideNode.type,
         width: size.width,
         height: size.height,
         x: 0,
@@ -384,8 +395,8 @@ export function buildLayout(
       };
     }
 
-    // Note edges: horizontal from right side of note to left side of target
-    const isNoteEdge = noteIds.has(edge.from);
+    // Side-node edges: horizontal from right side to left side of target
+    const isNoteEdge = sideNodeIds.has(edge.from);
     if (isNoteEdge) {
       const start: LayoutPoint = {
         x: fromNode.x + fromNode.width,
