@@ -735,13 +735,8 @@ function AppInner() {
         spec = single as FlowSpec;
       }
 
-      if (isEditorActive) {
-        setEditorNodes(specToRfNodes(spec));
-        setEditorEdges(specToRfEdges(spec));
-      } else {
-        setCustomViewerSpec(spec);
-        setViewerChoice("custom");
-      }
+      setEditorNodes(specToRfNodes(spec));
+      setEditorEdges(specToRfEdges(spec));
       setSelectedNodeId(null); setSelectedEdgeId(null);
       setNotice(Array.isArray(raw) ? `Imported first of ${raw.length} flows.` : "Imported JSON.");
     } catch (err) {
@@ -911,12 +906,27 @@ function AppInner() {
         {/* ── main canvas area ── */}
         <main className="main">
           <header className="toolbar">
-            <button type="button" onClick={handleExportJson}>Export JSON</button>
-            <button type="button" onClick={handleExportPng} disabled={busyPngExport}>
-              {busyPngExport ? "Exporting..." : "Export PNG"}
-            </button>
-            <button type="button" onClick={() => importInputRef.current?.click()}>Import JSON</button>
-            <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden-input" onChange={handleImportJson} />
+            {(() => {
+              const hasContent = isEditorActive
+                ? editorNodes.length > 0
+                : tab === "generate"
+                  ? !!activeGenFlow
+                  : true; /* viewer always has a preset loaded */
+              return (
+                <>
+                  <button type="button" onClick={handleExportJson} disabled={!hasContent}>Export JSON</button>
+                  <button type="button" onClick={handleExportPng} disabled={!hasContent || busyPngExport}>
+                    {busyPngExport ? "Exporting..." : "Export PNG"}
+                  </button>
+                  {isEditorActive && (
+                    <>
+                      <button type="button" onClick={() => importInputRef.current?.click()}>Import JSON</button>
+                      <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden-input" onChange={handleImportJson} />
+                    </>
+                  )}
+                </>
+              );
+            })()}
             <span className="mode-pill">
               {tab === "generate" ? "Generate" : tab === "viewer" ? "Viewer" : "Editor"}
             </span>
