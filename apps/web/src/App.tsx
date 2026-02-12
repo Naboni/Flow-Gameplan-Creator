@@ -267,40 +267,18 @@ function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<
 }
 
 function specToRfNodes(spec: FlowSpec): Node<AppNodeData>[] {
-  const positions = spec.ui?.nodePositions ?? {};
-
-  // Separate notes from main nodes for vertical layout
-  const mainNodes = spec.nodes.filter((n) => n.type !== "note");
-  const noteNodes = spec.nodes.filter((n) => n.type === "note");
-
-  // Build note→target map from edges
-  const noteIds = new Set(noteNodes.map((n) => n.id));
-  const noteTargetMap = new Map<string, string>();
-  for (const edge of spec.edges) {
-    if (noteIds.has(edge.from)) noteTargetMap.set(edge.from, edge.to);
+  try {
+    const layout = buildLayout(spec, { positionOverrides: spec.ui?.nodePositions ?? {} });
+    return layout.nodes.map((ln) => {
+      const raw = spec.nodes.find((n) => n.id === ln.id);
+      const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
+      return toRfNode(flowNode, { x: ln.x, y: ln.y });
+    });
+  } catch (err) {
+    console.error("buildLayout failed in specToRfNodes, using simple grid:", err);
+    // Fallback: stack nodes vertically
+    return spec.nodes.map((fn, i) => toRfNode(fn, { x: 300, y: 80 + i * 160 }));
   }
-
-  // Position main nodes vertically (one per row)
-  const result: Node<AppNodeData>[] = [];
-  const mainPositions = new Map<string, { x: number; y: number }>();
-  for (let i = 0; i < mainNodes.length; i++) {
-    const fn = mainNodes[i];
-    const pos = positions[fn.id] ?? { x: 300, y: 80 + i * 160 };
-    mainPositions.set(fn.id, pos);
-    result.push(toRfNode(fn, pos));
-  }
-
-  // Position notes to the left of their target
-  for (const note of noteNodes) {
-    const targetId = noteTargetMap.get(note.id);
-    const targetPos = targetId ? mainPositions.get(targetId) : undefined;
-    const pos = positions[note.id] ?? (targetPos
-      ? { x: targetPos.x - 380, y: targetPos.y }
-      : { x: -80, y: 80 + result.length * 160 });
-    result.push(toRfNode(note, pos));
-  }
-
-  return result;
 }
 
 function specToRfEdges(spec: FlowSpec): Edge[] {
