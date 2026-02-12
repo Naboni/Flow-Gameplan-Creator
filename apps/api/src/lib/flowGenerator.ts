@@ -1,31 +1,6 @@
+import type { FlowBlueprint, PlanDefinition } from "@flow/core";
 import { getOpenAI } from "./openai.js";
 import type { BrandProfile } from "./brandAnalyzer.js";
-
-/* ── types matching libs/core plan registry ── */
-
-type PlanKey = "core-foundation" | "growth-engine" | "full-system";
-
-type FlowBlueprint = {
-  flowId: string;
-  name: string;
-  triggerEvent: string;
-  emailCount: number;
-  smsCount: number;
-  hasSplit: boolean;
-  splitCondition?: string;
-  splitSegments?: {
-    yes: { email: number; sms: number };
-    no: { email: number; sms: number };
-  };
-  mirrorsFlow?: string;
-  structureNote?: string;
-};
-
-type PlanDefinition = {
-  key: PlanKey;
-  name: string;
-  flows: FlowBlueprint[];
-};
 
 /* ── AI-generated content per flow ── */
 

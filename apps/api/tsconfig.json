@@ -5,6 +5,10 @@
     "moduleResolution": "bundler",
     "outDir": "dist",
     "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@flow/core": ["../../libs/core/src/index.ts"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
