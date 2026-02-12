@@ -111,7 +111,7 @@ INSTRUCTIONS:
 1. For each message step, provide a title, channel (email/sms), a copy hint (1-2 sentences describing what the message should say), and a subject line suggestion for emails.
 2. Tailor all content to the brand's voice, products, and audience.
 3. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
-4. Provide 2-4 OBJECTIVE/FOCUS notes that describe the strategic purpose of key steps. Each note should reference which step number it's about (1-indexed).
+4. Provide OBJECTIVE/FOCUS notes for steps that have a specific strategic purpose worth calling out — for example: the first touchpoint that sets the tone, a message that introduces a discount or offer, a re-engagement attempt, or a key conversion email. Typically 1-2 notes per branch is right. Each note should reference which step number it's about (1-indexed). Return an empty array only if every step is straightforward with nothing worth highlighting.
 5. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
 6. ${blueprint.hasSplit
     ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
@@ -297,20 +297,21 @@ function assembleFlowSpec(
     strategyTargetIds.add(messageStepIds[0]);
   }
 
-  // Connect notes to messages that DON'T already have a strategy
+  // Connect notes to messages — prefer those without a strategy, fall back to all messages
   const noteTargetIds = messageStepIds.filter((id) => !strategyTargetIds.has(id));
+  const fallbackTargetIds = noteTargetIds.length > 0 ? noteTargetIds : messageStepIds;
+
   for (let i = 0; i < content.notes.length; i++) {
+    if (fallbackTargetIds.length === 0) break;
     const noteId = `${blueprint.flowId}_note_${i + 1}`;
+    const targetStepId = fallbackTargetIds[i % fallbackTargetIds.length];
     nodes.push({
       id: noteId,
       type: "note",
       title: content.notes[i].title,
       body: content.notes[i].body
     });
-    const targetStepId = noteTargetIds[i];
-    if (targetStepId) {
-      edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
-    }
+    edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
   }
 
   // Add strategy nodes per branch (connected to the first message of each branch)
@@ -481,7 +482,7 @@ function buildFallbackContent(
     splitConditionTailored: blueprint.splitCondition,
     yesSteps,
     noSteps,
-    notes: [{ title: "OBJECTIVE/FOCUS:", body: `${blueprint.name} flow for ${brand.brandName}`, attachToStep: 1 }],
+    notes: [],
     waitDurations: waits,
     yesStrategy,
     noStrategy: blueprint.hasSplit ? {
@@ -523,8 +524,8 @@ function validateAndFixCounts(
     content.waitDurations = [{ value: 2, unit: "days" }];
   }
 
-  if (!content.notes || content.notes.length === 0) {
-    content.notes = [{ title: "OBJECTIVE/FOCUS:", body: content.flowName, attachToStep: 1 }];
+  if (!content.notes) {
+    content.notes = [];
   }
 
   if (!content.yesStrategy) {
