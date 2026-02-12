@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FLOW_TYPE_LABELS, type FlowTemplate, type FlowType } from "@flow/core";
 import { API_BASE } from "../constants";
+import { Label } from "@/components/ui/label";
 
 type TemplatesByType = Partial<Record<FlowType, FlowTemplate[]>>;
 type Selection = Partial<Record<FlowType, string>>;
@@ -52,18 +53,19 @@ export function CustomPlanBuilder({ disabled, onSelectionChange }: Props) {
 
   const selectedCount = Object.values(selection).filter(Boolean).length;
 
-  if (loading) return <small className="hint">Loading templates...</small>;
+  if (loading) return <p className="text-xs text-muted-foreground">Loading templates...</p>;
 
   return (
-    <div className="custom-plan-builder">
-      <small className="hint">{selectedCount} flow{selectedCount !== 1 ? "s" : ""} selected</small>
+    <div className="flex flex-col gap-2 max-h-[380px] overflow-y-auto">
+      <p className="text-xs text-muted-foreground">{selectedCount} flow{selectedCount !== 1 ? "s" : ""} selected</p>
       {FLOW_TYPES.map((ft) => {
         const options = templates[ft] ?? [];
         if (options.length === 0) return null;
         return (
-          <div key={ft} className="cpb-row">
-            <label>{FLOW_TYPE_LABELS[ft]}</label>
+          <div key={ft} className="flex flex-col gap-1">
+            <Label className="text-xs">{FLOW_TYPE_LABELS[ft]}</Label>
             <select
+              className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               value={selection[ft] ?? ""}
               onChange={(e) => handleSelect(ft, e.target.value)}
               disabled={disabled}

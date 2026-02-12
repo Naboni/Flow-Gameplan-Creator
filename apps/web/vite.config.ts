@@ -10,8 +10,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      // Keep this alias targeted for Render monorepo builds where @flow/miro
-      // is symlinked outside apps/web and cannot resolve nested @flow/layout.
+      "@": path.resolve(__dirname, "./src"),
       "@flow/layout": path.resolve(__dirname, "node_modules/@flow/layout/src/index.ts")
     }
   },

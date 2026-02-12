@@ -13,18 +13,24 @@ import ReactFlow, {
   type Node,
   type NodeChange,
 } from "reactflow";
-import { parseFlowSpecSafe, type FlowNode, type FlowSpec } from "@flow/core";
+import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType } from "@flow/core";
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
+import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send } from "lucide-react";
 
 import type { AppNodeData, AppTab, BrandProfile, GeneratedResult, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
 import { API_BASE, EDGE_STYLE, PLAN_OPTIONS, VIEWER_CHOICES, rfContainerWidth } from "./constants";
 import { FlowCanvasNode } from "./components/FlowCanvasNode";
 import { SmartEdge } from "./components/SmartEdge";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { LibraryView } from "./components/LibraryView";
+import { LibraryView, FLOW_TYPES } from "./components/LibraryView";
 import { CustomPlanBuilder } from "./components/CustomPlanBuilder";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   createFlowNode,
   downloadBlob,
@@ -40,7 +46,7 @@ function AppInner() {
   const [tab, setTab] = useState<AppTab>("generate");
 
   /* generate tab */
-  const [genPlan, setGenPlan] = useState<PlanKey>("core-foundation");
+  const [genPlan, setGenPlan] = useState<PlanKey>("custom");
   const [genUrl, setGenUrl] = useState("");
   const [genBrand, setGenBrand] = useState("");
   const [genNotes, setGenNotes] = useState("");
@@ -50,6 +56,9 @@ function AppInner() {
   const [genError, setGenError] = useState("");
   const [activeFlowIndex, setActiveFlowIndex] = useState(0);
   const [customTemplateIds, setCustomTemplateIds] = useState<string[]>([]);
+
+  /* library tab */
+  const [libraryActiveType, setLibraryActiveType] = useState<FlowType>("email-welcome");
 
   /* viewer tab */
   const [viewerChoice, setViewerChoice] = useState<TemplateChoice>("welcome-series");
@@ -154,6 +163,12 @@ function AppInner() {
     if (!e) return null;
     return { id: e.id, label: typeof e.label === "string" ? e.label : undefined };
   }, [selectedEdgeId, flowEdges]);
+
+  const hasContent = isEditorActive
+    ? editorNodes.length > 0
+    : tab === "generate"
+      ? !!activeGenFlow
+      : tab !== "library";
 
   /* ── editor handlers ── */
 
@@ -318,7 +333,7 @@ function AppInner() {
     if (!canvasCaptureRef.current) return;
     setBusyPngExport(true);
     try {
-      const dataUrl = await toPng(canvasCaptureRef.current, { cacheBust: true, backgroundColor: "#f4f7fc", pixelRatio: 2 });
+      const dataUrl = await toPng(canvasCaptureRef.current, { cacheBust: true, backgroundColor: "#f8fafc", pixelRatio: 2 });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${getExportSpec().id}.png`;
@@ -381,317 +396,411 @@ function AppInner() {
 
   /* ── render ── */
 
+  const TAB_ITEMS: { value: AppTab; label: string; primary?: boolean }[] = [
+    { value: "generate", label: "Generate", primary: true },
+    { value: "library", label: "Library", primary: true },
+    { value: "viewer", label: "Viewer" },
+    { value: "editor", label: "Editor" },
+  ];
+
   return (
     <ReactFlowProvider>
-      <div className="shell">
-        <aside className="sidebar">
-          <h1>Flow Gameplan</h1>
-
-          <button type="button" className={`sidebar-btn ${tab === "generate" ? "active" : ""}`} onClick={() => switchTab("generate")}>
-            Generate
-          </button>
-          <button type="button" className={`sidebar-btn ${tab === "viewer" ? "active" : ""}`} onClick={() => switchTab("viewer")}>
-            Viewer
-          </button>
-          <button type="button" className={`sidebar-btn ${tab === "editor" ? "active" : ""}`} onClick={() => switchTab("editor")}>
-            Editor
-          </button>
-          <button type="button" className={`sidebar-btn ${tab === "library" ? "active" : ""}`} onClick={() => switchTab("library")}>
-            Library
-          </button>
-
-          {/* generate sidebar */}
-          {tab === "generate" ? (
-            genStep === "done" && genResult ? (
-              <div className="sidebar-section">
-                <label>Generated flows — {genResult.planName}</label>
-                <small className="hint">{genResult.brandName} · {genResult.flows.length} flows</small>
-                <div className="flow-list">
-                  {genResult.flows.map((flow, idx) => (
+      <div className="flex h-screen overflow-hidden">
+          {/* ── sidebar ── */}
+          <aside className="w-[260px] flex-shrink-0 border-r border-border bg-white flex flex-col overflow-y-auto">
+            <div className="px-4 pt-4 pb-2">
+              <h1 className="text-lg font-bold text-slate-900">Flow Gameplan</h1>
+            </div>
+            <div className="flex-1 p-4 pt-2 flex flex-col gap-3">
+              {/* library sidebar */}
+              {tab === "library" && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Flow Types</p>
+                  {FLOW_TYPES.map((ft) => (
                     <button
-                      key={flow.id}
+                      key={ft}
                       type="button"
-                      className={`flow-list-item ${idx === activeFlowIndex ? "active" : ""}`}
-                      onClick={() => setActiveFlowIndex(idx)}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-left ${
+                        ft === libraryActiveType
+                          ? "bg-primary/10 text-primary font-semibold"
+                          : "text-foreground hover:bg-muted font-medium"
+                      }`}
+                      onClick={() => setLibraryActiveType(ft)}
                     >
-                      {flow.name}
+                      <span className="truncate">{FLOW_TYPE_LABELS[ft]}</span>
                     </button>
                   ))}
                 </div>
-                <button type="button" className="sidebar-btn" onClick={() => openFlowInEditor(genResult.flows[activeFlowIndex])}>
-                  Edit in Editor
-                </button>
-                <button type="button" className="sidebar-btn" onClick={handleExportAllJson}>
-                  Export All (JSON)
-                </button>
-                <button type="button" className="reset-btn" onClick={() => { setGenStep("form"); setGenResult(null); }}>
-                  New generation
-                </button>
-              </div>
-            ) : (
-              <div className="sidebar-section">
-                <label>Plan</label>
-                <select value={genPlan} onChange={(e) => setGenPlan(e.target.value as PlanKey)} disabled={genBusy}>
-                  {PLAN_OPTIONS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-                <small className="hint">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</small>
+              )}
 
-                {genPlan === "custom" && (
+              {/* generate sidebar */}
+              {tab === "generate" && (
+                genStep === "done" && genResult ? (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Generated flows — {genResult.planName}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">{genResult.brandName} · {genResult.flows.length} flows</p>
+                    </div>
+                    <div className="flex flex-col gap-1 max-h-[360px] overflow-y-auto">
+                      {genResult.flows.map((flow, idx) => (
+                        <button
+                          key={flow.id}
+                          type="button"
+                          className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors truncate ${
+                            idx === activeFlowIndex
+                              ? "bg-primary/10 text-primary border border-primary/30"
+                              : "text-foreground hover:bg-muted border border-transparent"
+                          }`}
+                          onClick={() => setActiveFlowIndex(idx)}
+                        >
+                          {flow.name}
+                        </button>
+                      ))}
+                    </div>
+                    <Separator />
+                    <div className="flex flex-col gap-2">
+                      <Button size="sm" onClick={() => openFlowInEditor(genResult.flows[activeFlowIndex])}>
+                        <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                        Edit in Editor
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleExportAllJson}>
+                        <Download className="w-3.5 h-3.5 mr-1.5" />
+                        Export All (JSON)
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { setGenStep("form"); setGenResult(null); }}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                        New Generation
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="gen-plan">Plan</Label>
+                      <select
+                        id="gen-plan"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        value={genPlan}
+                        onChange={(e) => setGenPlan(e.target.value as PlanKey)}
+                        disabled={genBusy}
+                      >
+                        {PLAN_OPTIONS.map((p) => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-muted-foreground">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</p>
+                    </div>
+
+                    {genPlan === "custom" && (
+                      <div className="flex flex-col gap-1.5">
+                        <Label>Select templates</Label>
+                        <CustomPlanBuilder disabled={genBusy} onSelectionChange={handleCustomSelectionChange} />
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="gen-url">Client website URL</Label>
+                      <Input id="gen-url" type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="gen-brand">Brand name</Label>
+                      <Input id="gen-brand" type="text" placeholder="Brand Name" value={genBrand} onChange={(e) => setGenBrand(e.target.value)} disabled={genBusy} />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="gen-notes">Additional notes (optional)</Label>
+                      <Textarea
+                        id="gen-notes"
+                        rows={3}
+                        placeholder="Products, audience, tone, discount codes..."
+                        value={genNotes}
+                        onChange={(e) => setGenNotes(e.target.value)}
+                        disabled={genBusy}
+                      />
+                    </div>
+
+                    <Button className="mt-1" onClick={handleGenerate} disabled={genBusy}>
+                      {genBusy
+                        ? genStep === "analyzing" ? "Analyzing brand..." : "Generating flows..."
+                        : <>Generate Gameplan</>
+                      }
+                    </Button>
+
+                    {genError && <p className="text-sm font-medium text-destructive">{genError}</p>}
+                  </div>
+                )
+              )}
+
+              {/* viewer sidebar */}
+              {tab === "viewer" && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="viewer-preset">Preset</Label>
+                  <select
+                    id="viewer-preset"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={viewerChoice}
+                    onChange={(e) => setViewerChoice(e.target.value as TemplateChoice)}
+                  >
+                    {VIEWER_CHOICES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* editor sidebar */}
+              {tab === "editor" && (
+                <div className="flex flex-col gap-3">
+                  {([
+                    { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
+                    { label: "Timing", kinds: ["wait"] as NodeKind[] },
+                    { label: "Logic", kinds: ["split", "profileFilter"] as NodeKind[] },
+                    { label: "Annotations", kinds: ["note", "strategy"] as NodeKind[] }
+                  ]).map((category) => (
+                    <div key={category.label}>
+                      <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">{category.label}</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {category.kinds.map((kind) => {
+                          const displayLabel = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
+                          return (
+                            <button key={kind} type="button" draggable
+                              onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
+                              onClick={() => appendEditorNode(kind)}
+                              className={`h-9 rounded-md border text-sm font-medium cursor-grab transition-colors ${
+                                kind === "note"
+                                  ? "bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100"
+                                  : kind === "strategy"
+                                    ? "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-400 text-orange-700 hover:from-orange-100 hover:to-orange-200"
+                                    : "bg-white border-input text-foreground hover:bg-muted"
+                              }`}
+                            >+ {displayLabel}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={resetEditorFlow}>
+                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                    Reset editor
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Drag a tool onto canvas or click to append.</p>
+                </div>
+              )}
+            </div>
+
+            {/* ── export section (bottom of sidebar) ── */}
+            {tab !== "library" && (
+              <div className="border-t border-border p-4 flex flex-col gap-2">
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Export</p>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={handleExportJson} disabled={!hasContent}>
+                    <FileJson className="w-3.5 h-3.5 mr-1" />
+                    JSON
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1" onClick={handleExportPng} disabled={!hasContent || busyPngExport}>
+                    <Image className="w-3.5 h-3.5 mr-1" />
+                    {busyPngExport ? "..." : "PNG"}
+                  </Button>
+                </div>
+                {isEditorActive && (
                   <>
-                    <label>Select templates</label>
-                    <CustomPlanBuilder disabled={genBusy} onSelectionChange={handleCustomSelectionChange} />
+                    <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
+                      <Upload className="w-3.5 h-3.5 mr-1.5" />
+                      Import JSON
+                    </Button>
+                    <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportJson} />
+                  </>
+                )}
+                <Separator className="my-1" />
+                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Miro</p>
+                <Input className="h-8 text-xs" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
+                <Input className="h-8 text-xs" type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
+                <Button variant="outline" size="sm" onClick={handleExportMiro} disabled={busyMiroExport}>
+                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  {busyMiroExport ? "Exporting..." : "Export to Miro"}
+                </Button>
+              </div>
+            )}
+          </aside>
+
+          {/* ── main area ── */}
+          <main className="flex-1 flex flex-col overflow-hidden">
+            {/* tab bar */}
+            <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-border">
+              <nav className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                {TAB_ITEMS.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => switchTab(t.value)}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                      tab === t.value
+                        ? t.primary
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-white text-foreground shadow-sm"
+                        : t.primary
+                          ? "text-primary hover:bg-primary/10"
+                          : "text-muted-foreground hover:text-foreground hover:bg-white/60"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
+              {notice && <span className="ml-auto text-sm font-medium text-emerald-600">{notice}</span>}
+            </div>
+
+            {/* canvas / content */}
+            <div className="flex-1 bg-slate-50" ref={canvasCaptureRef}>
+              {tab === "library" ? (
+                <LibraryView activeType={libraryActiveType} />
+              ) : tab === "generate" && genStep !== "done" ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center max-w-md px-6">
+                    {genBusy ? (
+                      <>
+                        <div className="w-10 h-10 border-4 border-slate-200 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-muted-foreground">{genStep === "analyzing" ? "Analyzing brand website..." : "Generating tailored flows..."}</p>
+                        <p className="text-xs text-muted-foreground mt-2">This may take 30-60 seconds depending on the plan size.</p>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-xl font-semibold text-foreground mb-3">Generate a Flow Gameplan</h2>
+                        <p className="text-sm text-muted-foreground leading-relaxed">Fill in the client details in the sidebar and click <b>Generate Gameplan</b>.</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed mt-2">The platform will analyze the brand and create a complete set of tailored email/SMS flows.</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <ReactFlow
+                  key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : tab}
+                  onInit={(inst) => { reactFlowRef.current = inst; }}
+                  nodes={flowNodes}
+                  edges={flowEdges}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  fitView
+                  nodesDraggable={isEditorActive}
+                  nodesConnectable={isEditorActive}
+                  elementsSelectable
+                  onNodesChange={handleNodesChange}
+                  onEdgesChange={handleEdgesChange}
+                  onConnect={handleConnect}
+                  onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
+                  onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
+                  onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+                  onDragOver={(event) => { if (!isEditorActive) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
+                  onDrop={(event) => {
+                    if (!isEditorActive || !reactFlowRef.current) return;
+                    event.preventDefault();
+                    const rawKind = event.dataTransfer.getData("application/flow-node-kind");
+                    const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"];
+                    if (!allowed.includes(rawKind as NodeKind)) return;
+                    appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+                  }}
+                  deleteKeyCode={isEditorActive ? "Delete" : null}
+                  panOnDrag
+                  defaultEdgeOptions={{ ...EDGE_STYLE }}
+                >
+                  <Background color="#e2e8f0" gap={24} />
+                  <MiniMap pannable zoomable />
+                  <Controls />
+                </ReactFlow>
+              )}
+            </div>
+          </main>
+
+          {/* ── details panel ── */}
+          {tab !== "library" && (
+          <aside className="w-[320px] flex-shrink-0 border-l border-border bg-white p-4 overflow-y-auto">
+            <h2 className="text-base font-semibold text-foreground mb-3">Details</h2>
+            {!selectedFlowNode && !selectedEdge && <p className="text-sm text-muted-foreground">Select a node or edge.</p>}
+
+            {selectedFlowNode && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm"><b>ID:</b> {selectedFlowNode.id}</p>
+                <p className="text-sm"><b>Type:</b> {selectedFlowNode.type}</p>
+
+                {"title" in selectedFlowNode && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Title</Label>
+                    <Input value={selectedFlowNode.title} disabled={!isEditorActive}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => "title" in fn ? { ...fn, title: e.target.value } : fn); }} />
+                  </div>
+                )}
+
+                {"event" in selectedFlowNode && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Trigger event</Label>
+                    <Input value={selectedFlowNode.event} disabled={!isEditorActive}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "trigger" ? { ...fn, event: e.target.value } : fn); }} />
+                  </div>
+                )}
+
+                {"condition" in selectedFlowNode && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Split condition</Label>
+                    <Input value={selectedFlowNode.condition} disabled={!isEditorActive}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "split" ? { ...fn, condition: e.target.value } : fn); }} />
+                  </div>
+                )}
+
+                {"body" in selectedFlowNode && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Body</Label>
+                    <Textarea value={selectedFlowNode.body} disabled={!isEditorActive} rows={6}
+                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "note" ? { ...fn, body: e.target.value } : fn); }} />
+                  </div>
+                )}
+
+                {"copyHint" in selectedFlowNode && selectedFlowNode.copyHint && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Copy hint</Label>
+                    <Textarea value={selectedFlowNode.copyHint} disabled rows={3} />
+                  </div>
+                )}
+
+                {"primaryFocus" in selectedFlowNode && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Primary focus</Label>
+                      <Textarea value={selectedFlowNode.primaryFocus} disabled={!isEditorActive} rows={3}
+                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, primaryFocus: e.target.value } : fn); }} />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label>Secondary focus</Label>
+                      <Textarea value={selectedFlowNode.secondaryFocus} disabled={!isEditorActive} rows={3}
+                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, secondaryFocus: e.target.value } : fn); }} />
+                    </div>
+                    {"branchLabel" in selectedFlowNode && selectedFlowNode.branchLabel && (
+                      <p className="text-sm"><b>Branch:</b> {selectedFlowNode.branchLabel === "yes" ? "Yes (purchaser)" : "No (non-purchaser)"}</p>
+                    )}
                   </>
                 )}
 
-                <label>Client website URL</label>
-                <input type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
-
-                <label>Brand name</label>
-                <input type="text" placeholder="Brand Name" value={genBrand} onChange={(e) => setGenBrand(e.target.value)} disabled={genBusy} />
-
-                <label>Additional notes (optional)</label>
-                <textarea
-                  className="note-textarea"
-                  rows={3}
-                  placeholder="Products, audience, tone, discount codes..."
-                  value={genNotes}
-                  onChange={(e) => setGenNotes(e.target.value)}
-                  disabled={genBusy}
-                />
-
-                <button type="button" className="generate-btn" onClick={handleGenerate} disabled={genBusy}>
-                  {genBusy
-                    ? genStep === "analyzing" ? "Analyzing brand..." : "Generating flows..."
-                    : "Generate Gameplan"}
-                </button>
-
-                {genError ? <p className="gen-error">{genError}</p> : null}
+                {isEditorActive && (
+                  <Button variant="destructive" size="sm" onClick={deleteSelectedNode}>Delete node</Button>
+                )}
               </div>
-            )
-          ) : null}
-
-          {/* viewer sidebar */}
-          {tab === "viewer" ? (
-            <div className="sidebar-section">
-              <label>Preset</label>
-              <select value={viewerChoice} onChange={(e) => setViewerChoice(e.target.value as TemplateChoice)}>
-                {VIEWER_CHOICES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {/* editor sidebar */}
-          {tab === "editor" ? (
-            <div className="sidebar-section">
-              {([
-                { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
-                { label: "Timing", kinds: ["wait"] as NodeKind[] },
-                { label: "Logic", kinds: ["split", "profileFilter"] as NodeKind[] },
-                { label: "Annotations", kinds: ["note", "strategy"] as NodeKind[] }
-              ]).map((category) => (
-                <div key={category.label} className="tool-category">
-                  <small className="tool-category-label">{category.label}</small>
-                  <div className="tool-grid">
-                    {category.kinds.map((kind) => {
-                      const displayLabel = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
-                      return (
-                        <button key={kind} type="button" draggable
-                          onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
-                          onClick={() => appendEditorNode(kind)}
-                          className={kind === "note" ? "tool-btn-note" : kind === "strategy" ? "tool-btn-strategy" : undefined}
-                        >+ {displayLabel}</button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              <button type="button" className="reset-btn" onClick={resetEditorFlow}>Reset editor</button>
-              <small className="hint">Drag a tool onto canvas or click to append.</small>
-            </div>
-          ) : null}
-
-          {/* miro export */}
-          <div className="sidebar-section">
-            <label>Miro export</label>
-            <input type="text" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
-            <input type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
-            <button type="button" onClick={handleExportMiro} disabled={busyMiroExport}>
-              {busyMiroExport ? "Exporting..." : "Export to Miro"}
-            </button>
-          </div>
-        </aside>
-
-        <main className="main">
-          <header className="toolbar">
-            {(() => {
-              const hasContent = isEditorActive
-                ? editorNodes.length > 0
-                : tab === "generate"
-                  ? !!activeGenFlow
-                  : true;
-              return (
-                <>
-                  <button type="button" onClick={handleExportJson} disabled={!hasContent}>Export JSON</button>
-                  <button type="button" onClick={handleExportPng} disabled={!hasContent || busyPngExport}>
-                    {busyPngExport ? "Exporting..." : "Export PNG"}
-                  </button>
-                  {isEditorActive && (
-                    <>
-                      <button type="button" onClick={() => importInputRef.current?.click()}>Import JSON</button>
-                      <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden-input" onChange={handleImportJson} />
-                    </>
-                  )}
-                </>
-              );
-            })()}
-            <span className="mode-pill">
-              {tab === "generate" ? "Generate" : tab === "viewer" ? "Viewer" : tab === "editor" ? "Editor" : "Library"}
-            </span>
-            {notice ? <span className="notice">{notice}</span> : null}
-          </header>
-
-          <div className="canvas-wrap" ref={canvasCaptureRef}>
-            {tab === "library" ? (
-              <LibraryView />
-            ) : tab === "generate" && genStep !== "done" ? (
-              <div className="generate-placeholder">
-                <div className="gen-placeholder-inner">
-                  {genBusy ? (
-                    <>
-                      <div className="gen-spinner" />
-                      <p>{genStep === "analyzing" ? "Analyzing brand website..." : "Generating tailored flows..."}</p>
-                      <small>This may take 30-60 seconds depending on the plan size.</small>
-                    </>
-                  ) : (
-                    <>
-                      <h2>Generate a Flow Gameplan</h2>
-                      <p>Fill in the client details in the sidebar and click <b>Generate Gameplan</b>.</p>
-                      <p>The platform will analyze the brand and create a complete set of tailored email/SMS flows.</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <ReactFlow
-                key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : tab}
-                onInit={(inst) => { reactFlowRef.current = inst; }}
-                nodes={flowNodes}
-                edges={flowEdges}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                fitView
-                nodesDraggable={isEditorActive}
-                nodesConnectable={isEditorActive}
-                elementsSelectable
-                onNodesChange={handleNodesChange}
-                onEdgesChange={handleEdgesChange}
-                onConnect={handleConnect}
-                onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
-                onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }}
-                onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
-                onDragOver={(event) => { if (!isEditorActive) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
-                onDrop={(event) => {
-                  if (!isEditorActive || !reactFlowRef.current) return;
-                  event.preventDefault();
-                  const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                  const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"];
-                  if (!allowed.includes(rawKind as NodeKind)) return;
-                  appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-                }}
-                deleteKeyCode={isEditorActive ? "Delete" : null}
-                panOnDrag
-                defaultEdgeOptions={{ ...EDGE_STYLE }}
-              >
-                <Background color="#e2e8f0" gap={24} />
-                <MiniMap pannable zoomable />
-                <Controls />
-              </ReactFlow>
             )}
-          </div>
-        </main>
 
-        <aside className="panel">
-          <h2>Details</h2>
-          {!selectedFlowNode && !selectedEdge ? <p>Select a node or edge.</p> : null}
-
-          {selectedFlowNode ? (
-            <div className="details">
-              <p><b>ID:</b> {selectedFlowNode.id}</p>
-              <p><b>Type:</b> {selectedFlowNode.type}</p>
-
-              {"title" in selectedFlowNode ? (
-                <label>Title
-                  <input value={selectedFlowNode.title} disabled={!isEditorActive}
-                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => "title" in fn ? { ...fn, title: e.target.value } : fn); }} />
-                </label>
-              ) : null}
-
-              {"event" in selectedFlowNode ? (
-                <label>Trigger event
-                  <input value={selectedFlowNode.event} disabled={!isEditorActive}
-                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "trigger" ? { ...fn, event: e.target.value } : fn); }} />
-                </label>
-              ) : null}
-
-              {"condition" in selectedFlowNode ? (
-                <label>Split condition
-                  <input value={selectedFlowNode.condition} disabled={!isEditorActive}
-                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "split" ? { ...fn, condition: e.target.value } : fn); }} />
-                </label>
-              ) : null}
-
-              {"body" in selectedFlowNode ? (
-                <label>Body
-                  <textarea className="note-textarea" value={selectedFlowNode.body} disabled={!isEditorActive} rows={6}
-                    onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "note" ? { ...fn, body: e.target.value } : fn); }} />
-                </label>
-              ) : null}
-
-              {"copyHint" in selectedFlowNode && selectedFlowNode.copyHint ? (
-                <label>Copy hint
-                  <textarea className="note-textarea" value={selectedFlowNode.copyHint} disabled rows={3} />
-                </label>
-              ) : null}
-
-              {"primaryFocus" in selectedFlowNode ? (
-                <>
-                  <label>Primary focus
-                    <textarea className="note-textarea" value={selectedFlowNode.primaryFocus} disabled={!isEditorActive} rows={3}
-                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, primaryFocus: e.target.value } : fn); }} />
-                  </label>
-                  <label>Secondary focus
-                    <textarea className="note-textarea" value={selectedFlowNode.secondaryFocus} disabled={!isEditorActive} rows={3}
-                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, secondaryFocus: e.target.value } : fn); }} />
-                  </label>
-                  {"branchLabel" in selectedFlowNode && selectedFlowNode.branchLabel ? (
-                    <p><b>Branch:</b> {selectedFlowNode.branchLabel === "yes" ? "Yes (purchaser)" : "No (non-purchaser)"}</p>
-                  ) : null}
-                </>
-              ) : null}
-
-              {isEditorActive ? (
-                <button type="button" className="danger" onClick={deleteSelectedNode}>Delete node</button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {selectedEdge ? (
-            <div className="details">
-              <p><b>Edge:</b> {selectedEdge.id}</p>
-              <label>Label
-                <input value={selectedEdge.label ?? ""} disabled={!isEditorActive}
-                  onChange={(e) => { if (!isEditorActive) return; updateEditorEdgeLabel(selectedEdge.id, e.target.value); }} />
-              </label>
-              {isEditorActive ? (
-                <button type="button" className="danger" onClick={deleteSelectedEdge}>Delete edge</button>
-              ) : null}
-            </div>
-          ) : null}
-        </aside>
+            {selectedEdge && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm"><b>Edge:</b> {selectedEdge.id}</p>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Label</Label>
+                  <Input value={selectedEdge.label ?? ""} disabled={!isEditorActive}
+                    onChange={(e) => { if (!isEditorActive) return; updateEditorEdgeLabel(selectedEdge.id, e.target.value); }} />
+                </div>
+                {isEditorActive && (
+                  <Button variant="destructive" size="sm" onClick={deleteSelectedEdge}>Delete edge</Button>
+                )}
+              </div>
+            )}
+          </aside>
+          )}
       </div>
     </ReactFlowProvider>
   );

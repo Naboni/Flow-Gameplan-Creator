@@ -218,6 +218,8 @@ export async function exportFlowToMiro({
     itemMap[positioned.id] = created.id;
   }
 
+  const positionMap = new Map(layout.nodes.map((n) => [n.id, { x: n.x, y: n.y, width: n.width }]));
+
   for (const edge of flowSpec.edges) {
     const startItem = itemMap[edge.from];
     const endItem = itemMap[edge.to];
@@ -225,13 +227,30 @@ export async function exportFlowToMiro({
       continue;
     }
 
-    // Side-node edges (note/strategy → target) use horizontal routing
     const fromNode = nodeById.get(edge.from);
     const isSideEdge = fromNode ? sideNodeTypes.has(fromNode.type) : false;
 
+    let startSnap = "bottom";
+    let endSnap = "top";
+
+    if (isSideEdge) {
+      const sourcePos = positionMap.get(edge.from);
+      const targetPos = positionMap.get(edge.to);
+      if (sourcePos && targetPos) {
+        const sourceCenterX = sourcePos.x + sourcePos.width / 2;
+        const targetCenterX = targetPos.x + targetPos.width / 2;
+        const isRightSide = sourceCenterX > targetCenterX;
+        startSnap = isRightSide ? "left" : "right";
+        endSnap = isRightSide ? "right" : "left";
+      } else {
+        startSnap = "right";
+        endSnap = "left";
+      }
+    }
+
     const payload = {
-      startItem: { id: startItem, snapTo: isSideEdge ? "right" : "bottom" },
-      endItem: { id: endItem, snapTo: isSideEdge ? "left" : "top" },
+      startItem: { id: startItem, snapTo: startSnap },
+      endItem: { id: endItem, snapTo: endSnap },
       style: {
         strokeColor: isSideEdge ? "#F59E0B" : "#94A3B8",
         strokeWidth: isSideEdge ? 1.5 : 2,

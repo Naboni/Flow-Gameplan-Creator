@@ -42,7 +42,7 @@
     "name": "Email Welcome — Full System",
     "description": "6 messages, with split (6E/0S)",
     "triggerEvent": "When someone subscribes to the email list",
-    "emailCount": 7,
+    "emailCount": 6,
     "smsCount": 0,
     "hasSplit": true,
     "splitCondition": "Has placed order (purchaser vs non-purchaser)",
@@ -52,22 +52,22 @@
         "sms": 0
       },
       "no": {
-        "email": 4,
+        "email": 3,
         "sms": 0
       }
     },
     "isDefault": true,
     "createdAt": "2026-02-12T14:48:19.039Z",
-    "updatedAt": "2026-02-12T15:21:22.512Z"
+    "updatedAt": "2026-02-12T17:04:08.704Z"
   },
   {
     "id": "email-welcome_1770909756841",
     "flowType": "email-welcome",
     "name": "Email Welcome Naboni",
-    "description": "The description of Email Welcome Naboni",
+    "description": "The description of welcome email created by naboni",
     "triggerEvent": "Sign up",
     "emailCount": 5,
-    "smsCount": 0,
+    "smsCount": 1,
     "hasSplit": true,
     "splitSegments": {
       "yes": {
@@ -81,6 +81,6 @@
     },
     "isDefault": false,
     "createdAt": "2026-02-12T15:22:36.843Z",
-    "updatedAt": "2026-02-12T15:22:36.843Z"
+    "updatedAt": "2026-02-12T17:03:49.247Z"
   }
 ]

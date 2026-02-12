@@ -6,6 +6,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
+      "@/*": ["./src/*"],
       "@flow/core": ["../../libs/core/src/index.ts"],
       "@flow/layout": ["../../libs/layout/src/index.ts"],
       "@flow/miro": ["../../libs/miro/src/index.ts"]

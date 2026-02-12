@@ -59,5 +59,18 @@
     "isDefault": true,
     "createdAt": "2026-02-12T14:48:19.049Z",
     "updatedAt": "2026-02-12T14:48:19.049Z"
+  },
+  {
+    "id": "browse-abandonment_1770915902900",
+    "flowType": "browse-abandonment",
+    "name": "Zach's Browse Abandonment",
+    "description": "Browse abandonment tempate created by Zach",
+    "triggerEvent": "When someone leaves mid search",
+    "emailCount": 2,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": false,
+    "createdAt": "2026-02-12T17:05:02.904Z",
+    "updatedAt": "2026-02-12T17:05:02.904Z"
   }
 ]

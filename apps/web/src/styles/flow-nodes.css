@@ -1,3 +1,9 @@
+/* ── reactflow overrides ── */
+
+.react-flow__attribution {
+  display: none;
+}
+
 /* ── flow cards ── */
 
 .flow-card {
