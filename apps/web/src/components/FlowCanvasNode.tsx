@@ -19,7 +19,8 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
           <div className="flow-strategy__label flow-strategy__label--secondary">SECONDARY FOCUS</div>
           <p className="flow-strategy__text">{fn.secondaryFocus}</p>
         </div>
-        <Handle type="source" position={Position.Right} className="flow-handle flow-handle--strategy" />
+        <Handle type="source" position={Position.Left} id="source-left" className="flow-handle flow-handle--strategy" />
+        <Handle type="source" position={Position.Right} id="source-right" className="flow-handle flow-handle--strategy" />
       </div>
     );
   }
@@ -29,7 +30,8 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
       <div className={`flow-note ${selected ? "flow-note--selected" : ""}`}>
         <div className="flow-note__title">{data.title}</div>
         <div className="flow-note__body">{fn.body}</div>
-        <Handle type="source" position={Position.Right} className="flow-handle flow-handle--note" />
+        <Handle type="source" position={Position.Left} id="source-left" className="flow-handle flow-handle--note" />
+        <Handle type="source" position={Position.Right} id="source-right" className="flow-handle flow-handle--note" />
       </div>
     );
   }
@@ -67,6 +69,7 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
     <div className={`flow-card flow-card--${typeKey} ${selected ? "flow-card--selected" : ""}`}>
       <Handle type="target" position={Position.Top} className="flow-handle" />
       <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
+      <Handle type="target" position={Position.Right} id="right" className="flow-handle" />
       <div className="flow-card__header">
         <div className={`flow-card__icon flow-card__icon--${typeKey}`}>{icon}</div>
         <div className="flow-card__title">{data.title}</div>

@@ -108,8 +108,8 @@ function AppInner() {
   );
 
   const viewerEdges = useMemo<Edge[]>(
-    () => specToRfEdges(viewerSpec),
-    [viewerSpec]
+    () => specToRfEdges(viewerSpec, viewerNodes),
+    [viewerSpec, viewerNodes]
   );
 
   const genNodes = useMemo<Node<AppNodeData>[]>(() => {
@@ -133,8 +133,8 @@ function AppInner() {
 
   const genEdges = useMemo<Edge[]>(() => {
     if (!activeGenFlow) return [];
-    return specToRfEdges(activeGenFlow as FlowSpec);
-  }, [activeGenFlow]);
+    return specToRfEdges(activeGenFlow as FlowSpec, genNodes);
+  }, [activeGenFlow, genNodes]);
 
   const isEditorActive = tab === "editor";
   const flowNodes = isEditorActive ? editorNodes : (tab === "generate" && activeGenFlow ? genNodes : viewerNodes);
@@ -212,8 +212,9 @@ function AppInner() {
   }
 
   function openFlowInEditor(spec: FlowSpec) {
-    setEditorNodes(specToRfNodes(spec));
-    setEditorEdges(specToRfEdges(spec));
+    const nodes = specToRfNodes(spec);
+    setEditorNodes(nodes);
+    setEditorEdges(specToRfEdges(spec, nodes));
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setTab("editor");
@@ -333,8 +334,9 @@ function AppInner() {
         spec = single as FlowSpec;
       }
 
-      setEditorNodes(specToRfNodes(spec));
-      setEditorEdges(specToRfEdges(spec));
+      const nodes = specToRfNodes(spec);
+      setEditorNodes(nodes);
+      setEditorEdges(specToRfEdges(spec, nodes));
       setSelectedNodeId(null); setSelectedEdgeId(null);
       setNotice(Array.isArray(raw) ? `Imported first of ${raw.length} flows.` : "Imported JSON.");
     } catch (err) {

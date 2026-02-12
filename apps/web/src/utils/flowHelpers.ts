@@ -82,18 +82,35 @@ export function specToRfNodes(spec: FlowSpec): Node<AppNodeData>[] {
   }
 }
 
-export function specToRfEdges(spec: FlowSpec): Edge[] {
+export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Edge[] {
   const sideNodeIds = new Set(
     spec.nodes.filter((n) => n.type === "note" || n.type === "strategy").map((n) => n.id)
   );
-  return spec.edges.map((e) => ({
-    id: e.id,
-    source: e.from,
-    target: e.to,
-    label: e.label,
-    ...(sideNodeIds.has(e.from) ? { targetHandle: "left" } : {}),
-    ...EDGE_STYLE
-  }));
+
+  const nodePositionMap = new Map<string, { x: number }>();
+  if (rfNodes) {
+    for (const n of rfNodes) nodePositionMap.set(n.id, n.position);
+  }
+
+  return spec.edges.map((e) => {
+    if (!sideNodeIds.has(e.from)) {
+      return { id: e.id, source: e.from, target: e.to, label: e.label, ...EDGE_STYLE };
+    }
+
+    const sourcePos = nodePositionMap.get(e.from);
+    const targetPos = nodePositionMap.get(e.to);
+    const isRightSide = sourcePos && targetPos ? sourcePos.x > targetPos.x : false;
+
+    return {
+      id: e.id,
+      source: e.from,
+      target: e.to,
+      label: e.label,
+      sourceHandle: isRightSide ? "source-left" : "source-right",
+      targetHandle: isRightSide ? "right" : "left",
+      ...EDGE_STYLE
+    };
+  });
 }
 
 export function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]): FlowSpec {
