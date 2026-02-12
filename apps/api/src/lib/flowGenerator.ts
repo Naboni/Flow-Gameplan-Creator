@@ -302,12 +302,28 @@ function assembleFlowSpec(
     edges.push({ id: nextEdgeId(), from: prevNo, to: noOutcome });
   }
 
-  // Collect message step IDs to connect notes to them
+  // Collect message step IDs
   const messageStepIds = nodes
     .filter((n) => n.type === "message")
     .map((n) => n.id);
 
-  // Add note nodes and connect each to its corresponding message step
+  // Determine which messages will have strategy cards (to avoid note overlap)
+  const strategyTargetIds = new Set<string>();
+  if (blueprint.hasSplit && blueprint.splitSegments) {
+    if (content.yesStrategy) {
+      const id = `${blueprint.flowId}_yes_1`;
+      if (messageStepIds.includes(id)) strategyTargetIds.add(id);
+    }
+    if (content.noStrategy) {
+      const id = `${blueprint.flowId}_no_1`;
+      if (messageStepIds.includes(id)) strategyTargetIds.add(id);
+    }
+  } else if (content.yesStrategy && messageStepIds.length > 0) {
+    strategyTargetIds.add(messageStepIds[0]);
+  }
+
+  // Connect notes to messages that DON'T already have a strategy
+  const noteTargetIds = messageStepIds.filter((id) => !strategyTargetIds.has(id));
   for (let i = 0; i < content.notes.length; i++) {
     const noteId = `${blueprint.flowId}_note_${i + 1}`;
     nodes.push({
@@ -316,7 +332,7 @@ function assembleFlowSpec(
       title: content.notes[i].title,
       body: content.notes[i].body
     });
-    const targetStepId = messageStepIds[i];
+    const targetStepId = noteTargetIds[i];
     if (targetStepId) {
       edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
     }

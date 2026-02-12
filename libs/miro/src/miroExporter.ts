@@ -80,32 +80,80 @@ async function requestWithRetry<T>(
   }
 }
 
-function shapeStyleForNodeType(nodeType: string) {
+function shapeStyleForNodeType(nodeType: string, specNode?: FlowSpec["nodes"][number]) {
   switch (nodeType) {
     case "trigger":
-      return { shape: "round_rectangle", fillColor: "#EEF3FF", borderColor: "#9BB0FF" };
+      return { shape: "round_rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "center" as const };
     case "split":
-      return { shape: "rectangle", fillColor: "#F5EEFF", borderColor: "#B693E6" };
+      return { shape: "round_rectangle", fillColor: "#FAF5FF", borderColor: "#8B5CF6", textAlign: "center" as const };
     case "wait":
-      return { shape: "rectangle", fillColor: "#F4F6FA", borderColor: "#C5CDDD" };
+      return { shape: "round_rectangle", fillColor: "#F3F4F6", borderColor: "#9CA3AF", textAlign: "center" as const };
     case "outcome":
-      return { shape: "rectangle", fillColor: "#EAF9EE", borderColor: "#8FC89A" };
+      return { shape: "round_rectangle", fillColor: "#ECFDF5", borderColor: "#10B981", textAlign: "center" as const };
+    case "profileFilter":
+      return { shape: "round_rectangle", fillColor: "#FFFBEB", borderColor: "#F59E0B", textAlign: "center" as const };
+    case "note":
+      return { shape: "rectangle", fillColor: "#FFF8F0", borderColor: "#F59E0B", textAlign: "left" as const };
+    case "strategy": {
+      const branch = specNode && "branchLabel" in specNode ? specNode.branchLabel : "yes";
+      if (branch === "no") {
+        return { shape: "rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "left" as const };
+      }
+      return { shape: "rectangle", fillColor: "#FFF7ED", borderColor: "#F97316", textAlign: "left" as const };
+    }
+    case "message": {
+      const channel = specNode && "channel" in specNode ? specNode.channel : "email";
+      if (channel === "sms") {
+        return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#EF4444", textAlign: "left" as const };
+      }
+      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#22C55E", textAlign: "left" as const };
+    }
     default:
-      return { shape: "rectangle", fillColor: "#FFFFFF", borderColor: "#B7C3E7" };
+      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#CBD5E1", textAlign: "center" as const };
   }
 }
 
 function nodeContent(specNode: FlowSpec["nodes"][number]): string {
   const title = "title" in specNode ? specNode.title : specNode.type;
+
   if (specNode.type === "wait") {
-    return `<p><strong>Wait</strong><br/>${specNode.duration.value} ${specNode.duration.unit}</p>`;
+    return `<p><strong>Wait ${specNode.duration.value} ${specNode.duration.unit}</strong></p>`;
   }
+
   if (specNode.type === "message") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${specNode.channel.toUpperCase()}</p>`;
+    const badge = specNode.channel.toUpperCase();
+    const hint = "copyHint" in specNode && specNode.copyHint
+      ? `<br/>${escapeHtml(specNode.copyHint)}`
+      : "";
+    return `<p><strong>${escapeHtml(title)}</strong>${hint}<br/><em>${badge}</em></p>`;
   }
+
   if (specNode.type === "split") {
     return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.condition)}</p>`;
   }
+
+  if (specNode.type === "trigger") {
+    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.event)}</p>`;
+  }
+
+  if (specNode.type === "profileFilter") {
+    return `<p><strong>${escapeHtml(title)}</strong><br/>${specNode.filters.map(escapeHtml).join(", ")}</p>`;
+  }
+
+  if (specNode.type === "note") {
+    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.body)}</p>`;
+  }
+
+  if (specNode.type === "strategy") {
+    const primary = escapeHtml(specNode.primaryFocus);
+    const secondary = escapeHtml(specNode.secondaryFocus);
+    return `<p><strong>STRATEGY</strong></p><p><strong>PRIMARY FOCUS</strong><br/>${primary}</p><p><strong>SECONDARY FOCUS</strong><br/>${secondary}</p>`;
+  }
+
+  if (specNode.type === "outcome") {
+    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.result)}</p>`;
+  }
+
   return `<p><strong>${escapeHtml(title)}</strong></p>`;
 }
 
@@ -128,12 +176,14 @@ export async function exportFlowToMiro({
     "Content-Type": "application/json"
   };
 
+  const sideNodeTypes = new Set(["note", "strategy"]);
+
   for (const positioned of layout.nodes) {
     const specNode = nodeById.get(positioned.id);
     if (!specNode) {
       continue;
     }
-    const style = shapeStyleForNodeType(positioned.type);
+    const style = shapeStyleForNodeType(positioned.type, specNode);
     const payload = {
       data: {
         content: nodeContent(specNode),
@@ -141,7 +191,9 @@ export async function exportFlowToMiro({
       },
       style: {
         fillColor: style.fillColor,
-        borderColor: style.borderColor
+        borderColor: style.borderColor,
+        textAlign: style.textAlign,
+        textAlignVertical: "top" as const
       },
       position: {
         x: originX + positioned.x + positioned.width / 2,
@@ -173,12 +225,17 @@ export async function exportFlowToMiro({
       continue;
     }
 
+    // Side-node edges (note/strategy → target) use horizontal routing
+    const fromNode = nodeById.get(edge.from);
+    const isSideEdge = fromNode ? sideNodeTypes.has(fromNode.type) : false;
+
     const payload = {
-      startItem: { id: startItem, snapTo: "bottom" },
-      endItem: { id: endItem, snapTo: "top" },
+      startItem: { id: startItem, snapTo: isSideEdge ? "right" : "bottom" },
+      endItem: { id: endItem, snapTo: isSideEdge ? "left" : "top" },
       style: {
-        strokeColor: "#707784",
-        strokeWidth: 2
+        strokeColor: isSideEdge ? "#F59E0B" : "#94A3B8",
+        strokeWidth: isSideEdge ? 1.5 : 2,
+        strokeStyle: isSideEdge ? "dashed" : "normal"
       },
       captions: edge.label
         ? [

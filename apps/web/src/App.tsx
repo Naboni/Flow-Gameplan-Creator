@@ -4,7 +4,10 @@ import ReactFlow, {
   applyEdgeChanges,
   applyNodeChanges,
   Background,
+  BaseEdge,
   Controls,
+  getStraightPath,
+  getSmoothStepPath,
   Handle,
   MiniMap,
   MarkerType,
@@ -13,6 +16,7 @@ import ReactFlow, {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeProps,
   type Node,
   type NodeChange,
   type NodeProps
@@ -66,10 +70,71 @@ type GeneratedResult = {
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/, "");
 
 const EDGE_STYLE = {
+  type: "smartEdge" as const,
   markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
   style: { stroke: "#94a3b8", strokeWidth: 1.5 },
   labelStyle: { fill: "#475569", fontWeight: 600, fontSize: 11 }
 } as const;
+
+/* ── custom edge: orthogonal path, straight down when aligned ── */
+
+function buildVerticalPath(sx: number, sy: number, tx: number, ty: number, r = 8): [string, number, number] {
+  const midY = (sy + ty) / 2;
+  const labelX = (sx + tx) / 2;
+  const labelY = midY;
+
+  // Perfectly aligned: straight vertical line
+  if (Math.abs(sx - tx) < 1) {
+    return [`M ${sx} ${sy} L ${tx} ${ty}`, labelX, labelY];
+  }
+
+  // Offset: Z-shaped path — down, horizontal turn, down — with rounded corners
+  const dx = tx - sx;
+  const sign = dx > 0 ? 1 : -1;
+  const cr = Math.min(r, Math.abs(dx) / 2, Math.abs(midY - sy), Math.abs(ty - midY));
+
+  const path =
+    `M ${sx} ${sy} ` +
+    `L ${sx} ${midY - cr} ` +
+    `Q ${sx} ${midY} ${sx + sign * cr} ${midY} ` +
+    `L ${tx - sign * cr} ${midY} ` +
+    `Q ${tx} ${midY} ${tx} ${midY + cr} ` +
+    `L ${tx} ${ty}`;
+
+  return [path, labelX, labelY];
+}
+
+function SmartEdge(props: EdgeProps) {
+  const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = props;
+
+  const isVerticalFlow = sourcePosition === Position.Bottom && targetPosition === Position.Top;
+  // With center-aligned layout, same-lane nodes have handles within a few pixels.
+  // Use small threshold for true alignment, Z-path for small offsets, smoothstep for large.
+  const isSameLane = Math.abs(sourceX - targetX) < 5;
+
+  let path: string, labelX: number, labelY: number;
+  if (isVerticalFlow && isSameLane) {
+    [path, labelX, labelY] = buildVerticalPath(sourceX, sourceY, targetX, targetY, 8);
+  } else {
+    [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 8 });
+  }
+
+  return (
+    <BaseEdge
+      path={path}
+      labelX={labelX}
+      labelY={labelY}
+      markerEnd={props.markerEnd}
+      style={props.style}
+      label={props.label}
+      labelStyle={props.labelStyle}
+      labelShowBg={props.labelShowBg}
+      labelBgStyle={props.labelBgStyle}
+      labelBgPadding={props.labelBgPadding}
+      labelBgBorderRadius={props.labelBgBorderRadius}
+    />
+  );
+}
 
 const VIEWER_CHOICES: Array<{ label: string; value: TemplateChoice }> = [
   { label: "Welcome Series (test case)", value: "welcome-series" },
@@ -176,11 +241,22 @@ function createFlowNode(kind: NodeKind): FlowNode {
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
+const NODE_CONTAINER_WIDTH: Partial<Record<FlowNode["type"], number>> = {
+  note: 320,
+  strategy: 320,
+};
+const DEFAULT_CONTAINER_WIDTH = 280;
+
+function rfContainerWidth(nodeType: string): number {
+  return NODE_CONTAINER_WIDTH[nodeType as FlowNode["type"]] ?? DEFAULT_CONTAINER_WIDTH;
+}
+
 function toRfNode(flowNode: FlowNode, position: { x: number; y: number }): Node<AppNodeData> {
   return {
     id: flowNode.id,
     type: "flowNode",
     position,
+    style: { width: rfContainerWidth(flowNode.type) },
     data: {
       title: "title" in flowNode ? flowNode.title : flowNode.type,
       subtitle: nodeSubtitle(flowNode),
@@ -228,11 +304,15 @@ function specToRfNodes(spec: FlowSpec): Node<AppNodeData>[] {
 }
 
 function specToRfEdges(spec: FlowSpec): Edge[] {
+  const sideNodeIds = new Set(
+    spec.nodes.filter((n) => n.type === "note" || n.type === "strategy").map((n) => n.id)
+  );
   return spec.edges.map((e) => ({
     id: e.id,
     source: e.from,
     target: e.to,
     label: e.label,
+    ...(sideNodeIds.has(e.from) ? { targetHandle: "left" } : {}),
     ...EDGE_STYLE
   }));
 }
@@ -298,7 +378,6 @@ function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
     return (
       <div className={`flow-card flow-card--wait ${selected ? "flow-card--selected" : ""}`}>
         <Handle type="target" position={Position.Top} className="flow-handle" />
-        <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
         <div className="flow-card__header">
           <div className="flow-card__icon flow-card__icon--wait">{NodeIcons.wait}</div>
           <span className="flow-card__title">Wait {fn.duration.value} {fn.duration.unit}</span>
@@ -407,6 +486,7 @@ function AppInner() {
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
   const reactFlowRef = useRef<{ screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number } } | null>(null);
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
+  const edgeTypes = useMemo(() => ({ smartEdge: SmartEdge }), []);
 
   /* ── active spec for viewer/generate tabs ── */
   const activeGenFlow = useMemo(() => {
@@ -436,6 +516,7 @@ function AppInner() {
       const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
       return {
         id: ln.id, type: "flowNode", position: { x: ln.x, y: ln.y }, draggable: false,
+        style: { width: rfContainerWidth(ln.type) },
         data: { title: ln.title, subtitle: raw ? nodeSubtitle(raw) : ln.type, nodeType: ln.type, flowNode }
       };
     }),
@@ -443,8 +524,8 @@ function AppInner() {
   );
 
   const viewerEdges = useMemo<Edge[]>(
-    () => viewerSpec.edges.map((e) => ({ id: e.id, source: e.from, target: e.to, label: e.label, ...EDGE_STYLE })),
-    [viewerSpec.edges]
+    () => specToRfEdges(viewerSpec),
+    [viewerSpec]
   );
 
   /* ── generated flow: try layout, fall back to grid ── */
@@ -457,6 +538,7 @@ function AppInner() {
         const flowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
         return {
           id: ln.id, type: "flowNode", position: { x: ln.x, y: ln.y }, draggable: false,
+          style: { width: rfContainerWidth(ln.type) },
           data: { title: ln.title, subtitle: raw ? nodeSubtitle(raw as FlowNode) : ln.type, nodeType: ln.type, flowNode: flowNode as FlowNode }
         };
       });
@@ -810,19 +892,28 @@ function AppInner() {
           {/* ── EDITOR sidebar ── */}
           {tab === "editor" ? (
             <div className="sidebar-section">
-              <label>Editor tools</label>
-              <div className="tool-grid">
-                {(["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"] as NodeKind[]).map((kind) => {
-                  const label = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
-                  return (
-                    <button key={kind} type="button" draggable
-                      onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
-                      onClick={() => appendEditorNode(kind)}
-                      className={kind === "note" ? "tool-btn-note" : kind === "strategy" ? "tool-btn-strategy" : undefined}
-                    >+ {label}</button>
-                  );
-                })}
-              </div>
+              {([
+                { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
+                { label: "Timing", kinds: ["wait"] as NodeKind[] },
+                { label: "Logic", kinds: ["split", "profileFilter"] as NodeKind[] },
+                { label: "Annotations", kinds: ["note", "strategy"] as NodeKind[] }
+              ]).map((category) => (
+                <div key={category.label} className="tool-category">
+                  <small className="tool-category-label">{category.label}</small>
+                  <div className="tool-grid">
+                    {category.kinds.map((kind) => {
+                      const displayLabel = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
+                      return (
+                        <button key={kind} type="button" draggable
+                          onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
+                          onClick={() => appendEditorNode(kind)}
+                          className={kind === "note" ? "tool-btn-note" : kind === "strategy" ? "tool-btn-strategy" : undefined}
+                        >+ {displayLabel}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
               <button type="button" className="reset-btn" onClick={resetEditorFlow}>Reset editor</button>
               <small className="hint">Drag a tool onto canvas or click to append.</small>
             </div>
@@ -880,6 +971,7 @@ function AppInner() {
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 fitView
                 nodesDraggable={isEditorActive}
                 nodesConnectable={isEditorActive}
@@ -901,7 +993,7 @@ function AppInner() {
                 }}
                 deleteKeyCode={isEditorActive ? "Delete" : null}
                 panOnDrag
-                defaultEdgeOptions={{ type: "default", ...EDGE_STYLE }}
+                defaultEdgeOptions={{ ...EDGE_STYLE }}
               >
                 <Background color="#e2e8f0" gap={24} />
                 <MiniMap pannable zoomable />

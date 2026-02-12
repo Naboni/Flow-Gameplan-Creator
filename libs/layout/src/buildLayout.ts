@@ -49,11 +49,11 @@ const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides">
 
 const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }> = {
   trigger: { width: 280, height: 90 },
-  profileFilter: { width: 280, height: 110 },
-  split: { width: 300, height: 170 },
-  wait: { width: 140, height: 56 },
-  message: { width: 300, height: 150 },
-  outcome: { width: 260, height: 90 },
+  profileFilter: { width: 280, height: 100 },
+  split: { width: 280, height: 100 },
+  wait: { width: 280, height: 56 },
+  message: { width: 280, height: 110 },
+  outcome: { width: 280, height: 80 },
   note: { width: 320, height: 160 },
   strategy: { width: 320, height: 200 }
 };
@@ -293,7 +293,9 @@ export function buildLayout(
       laneStackCount.set(lane, laneIndex + 1);
 
       const size = NODE_SIZE_MAP[node.type];
-      const rawX = lane * resolved.laneSpacing + laneIndex * resolved.sameLaneOffset;
+      // Center-align nodes in their lane so handles (at center) line up vertically
+      const laneCenter = lane * resolved.laneSpacing + laneIndex * resolved.sameLaneOffset;
+      const rawX = laneCenter - size.width / 2;
       const rawY = depth * resolved.rowSpacing;
 
       positionedNodes.push({
