@@ -1,0 +1,28 @@
+[
+  {
+    "id": "growth_site_abandonment",
+    "flowType": "site-abandonment",
+    "name": "Site Abandonment — Growth Engine",
+    "description": "2 messages (2E/0S)",
+    "triggerEvent": "When someone visits the site but does not view products",
+    "emailCount": 2,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.035Z",
+    "updatedAt": "2026-02-12T14:48:19.035Z"
+  },
+  {
+    "id": "full_site_abandonment",
+    "flowType": "site-abandonment",
+    "name": "Site Abandonment — Full System",
+    "description": "3 messages (3E/0S)",
+    "triggerEvent": "When someone visits the site but does not view products",
+    "emailCount": 3,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.050Z",
+    "updatedAt": "2026-02-12T14:48:19.050Z"
+  }
+]

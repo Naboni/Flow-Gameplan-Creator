@@ -1,0 +1,63 @@
+[
+  {
+    "id": "core_browse_abandonment",
+    "flowType": "browse-abandonment",
+    "name": "Browse Abandonment — Core Foundation",
+    "description": "4 messages (2E/2S)",
+    "triggerEvent": "When someone views products but does not add to cart",
+    "emailCount": 2,
+    "smsCount": 2,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.019Z",
+    "updatedAt": "2026-02-12T14:48:19.019Z"
+  },
+  {
+    "id": "growth_browse_abandonment",
+    "flowType": "browse-abandonment",
+    "name": "Browse Abandonment — Growth Engine",
+    "description": "10 messages, with split (6E/4S)",
+    "triggerEvent": "When someone views products but does not add to cart",
+    "emailCount": 6,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Purchase history (has purchased before vs first-time)",
+    "splitSegments": {
+      "yes": {
+        "email": 3,
+        "sms": 2
+      },
+      "no": {
+        "email": 3,
+        "sms": 2
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.034Z",
+    "updatedAt": "2026-02-12T14:48:19.034Z"
+  },
+  {
+    "id": "full_browse_abandonment",
+    "flowType": "browse-abandonment",
+    "name": "Browse Abandonment — Full System",
+    "description": "12 messages, with split (8E/4S)",
+    "triggerEvent": "When someone views products but does not add to cart",
+    "emailCount": 8,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Purchase history (has purchased before vs first-time)",
+    "splitSegments": {
+      "yes": {
+        "email": 4,
+        "sms": 2
+      },
+      "no": {
+        "email": 4,
+        "sms": 2
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.049Z",
+    "updatedAt": "2026-02-12T14:48:19.049Z"
+  }
+]

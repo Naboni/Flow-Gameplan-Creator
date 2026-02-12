@@ -1,0 +1,63 @@
+[
+  {
+    "id": "core_checkout_abandonment",
+    "flowType": "checkout-abandonment",
+    "name": "Checkout Abandonment — Core Foundation",
+    "description": "4 messages (2E/2S)",
+    "triggerEvent": "When someone starts checkout but does not purchase",
+    "emailCount": 2,
+    "smsCount": 2,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.008Z",
+    "updatedAt": "2026-02-12T14:48:19.008Z"
+  },
+  {
+    "id": "growth_checkout_abandonment",
+    "flowType": "checkout-abandonment",
+    "name": "Checkout Abandonment — Growth Engine",
+    "description": "10 messages, with split (6E/4S)",
+    "triggerEvent": "When someone starts checkout but does not purchase",
+    "emailCount": 6,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Purchase history (has purchased before vs first-time)",
+    "splitSegments": {
+      "yes": {
+        "email": 3,
+        "sms": 2
+      },
+      "no": {
+        "email": 3,
+        "sms": 2
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.030Z",
+    "updatedAt": "2026-02-12T14:48:19.030Z"
+  },
+  {
+    "id": "full_checkout_abandonment",
+    "flowType": "checkout-abandonment",
+    "name": "Checkout Abandonment — Full System",
+    "description": "12 messages, with split (8E/4S)",
+    "triggerEvent": "When someone starts checkout but does not purchase",
+    "emailCount": 8,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Purchase history (has purchased before vs first-time)",
+    "splitSegments": {
+      "yes": {
+        "email": 4,
+        "sms": 2
+      },
+      "no": {
+        "email": 4,
+        "sms": 2
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.048Z",
+    "updatedAt": "2026-02-12T14:48:19.048Z"
+  }
+]

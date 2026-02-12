@@ -1,0 +1,39 @@
+[
+  {
+    "id": "growth_winback",
+    "flowType": "winback",
+    "name": "Winback — Growth Engine",
+    "description": "2 messages (2E/0S)",
+    "triggerEvent": "When someone has not purchased in 60+ days",
+    "emailCount": 2,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.037Z",
+    "updatedAt": "2026-02-12T14:48:19.037Z"
+  },
+  {
+    "id": "full_winback",
+    "flowType": "winback",
+    "name": "Winback — Full System",
+    "description": "6 messages, with split (6E/0S)",
+    "triggerEvent": "When someone has not purchased in 60+ days",
+    "emailCount": 6,
+    "smsCount": 0,
+    "hasSplit": true,
+    "splitCondition": "Purchase history (has purchased before vs first-time)",
+    "splitSegments": {
+      "yes": {
+        "email": 3,
+        "sms": 0
+      },
+      "no": {
+        "email": 3,
+        "sms": 0
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.052Z",
+    "updatedAt": "2026-02-12T14:48:19.052Z"
+  }
+]

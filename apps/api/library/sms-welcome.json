@@ -1,0 +1,63 @@
+[
+  {
+    "id": "core_sms_welcome",
+    "flowType": "sms-welcome",
+    "name": "SMS Welcome — Core Foundation",
+    "description": "2 messages (0E/2S)",
+    "triggerEvent": "When someone opts in to SMS",
+    "emailCount": 0,
+    "smsCount": 2,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.006Z",
+    "updatedAt": "2026-02-12T14:48:19.006Z"
+  },
+  {
+    "id": "growth_sms_welcome",
+    "flowType": "sms-welcome",
+    "name": "SMS Welcome — Growth Engine",
+    "description": "3 messages, with split (0E/3S)",
+    "triggerEvent": "When someone opts in to SMS",
+    "emailCount": 0,
+    "smsCount": 3,
+    "hasSplit": true,
+    "splitCondition": "Has placed order (purchaser vs non-purchaser)",
+    "splitSegments": {
+      "yes": {
+        "email": 0,
+        "sms": 1
+      },
+      "no": {
+        "email": 0,
+        "sms": 2
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.024Z",
+    "updatedAt": "2026-02-12T14:48:19.024Z"
+  },
+  {
+    "id": "full_sms_welcome",
+    "flowType": "sms-welcome",
+    "name": "SMS Welcome — Full System",
+    "description": "4 messages, with split (0E/4S)",
+    "triggerEvent": "When someone opts in to SMS",
+    "emailCount": 0,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Has placed order (purchaser vs non-purchaser)",
+    "splitSegments": {
+      "yes": {
+        "email": 0,
+        "sms": 1
+      },
+      "no": {
+        "email": 0,
+        "sms": 3
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.040Z",
+    "updatedAt": "2026-02-12T14:48:19.040Z"
+  }
+]

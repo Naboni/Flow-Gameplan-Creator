@@ -1,0 +1,43 @@
+[
+  {
+    "id": "core_post_purchase",
+    "flowType": "post-purchase",
+    "name": "Post-Purchase — Core Foundation",
+    "description": "2 messages (1E/1S)",
+    "triggerEvent": "When someone completes a purchase",
+    "emailCount": 1,
+    "smsCount": 1,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.020Z",
+    "updatedAt": "2026-02-12T14:48:19.020Z"
+  },
+  {
+    "id": "growth_post_purchase",
+    "flowType": "post-purchase",
+    "name": "Post-Purchase — Growth Engine",
+    "description": "5 messages, with split (3E/2S)",
+    "triggerEvent": "When someone completes a purchase",
+    "emailCount": 3,
+    "smsCount": 2,
+    "hasSplit": true,
+    "splitCondition": "Product or purchase history",
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.036Z",
+    "updatedAt": "2026-02-12T14:48:19.036Z"
+  },
+  {
+    "id": "full_post_purchase",
+    "flowType": "post-purchase",
+    "name": "Post-Purchase — Full System",
+    "description": "9 messages, with split (6E/3S)",
+    "triggerEvent": "When someone completes a purchase",
+    "emailCount": 6,
+    "smsCount": 3,
+    "hasSplit": true,
+    "splitCondition": "Product or purchase history",
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.051Z",
+    "updatedAt": "2026-02-12T14:48:19.051Z"
+  }
+]

@@ -1,8 +1,8 @@
 import type { FlowNode, FlowSpec } from "@flow/core";
 
-export type AppTab = "generate" | "viewer" | "editor";
+export type AppTab = "generate" | "viewer" | "editor" | "library";
 export type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
-export type PlanKey = "core-foundation" | "growth-engine" | "full-system";
+export type PlanKey = "core-foundation" | "growth-engine" | "full-system" | "custom";
 export type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note" | "strategy";
 
 export type AppNodeData = {

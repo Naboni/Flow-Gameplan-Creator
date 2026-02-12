@@ -1,0 +1,86 @@
+[
+  {
+    "id": "core_email_welcome",
+    "flowType": "email-welcome",
+    "name": "Email Welcome — Core Foundation",
+    "description": "3 messages (3E/0S)",
+    "triggerEvent": "When someone subscribes to the email list",
+    "emailCount": 3,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.003Z",
+    "updatedAt": "2026-02-12T14:48:19.003Z"
+  },
+  {
+    "id": "growth_email_welcome",
+    "flowType": "email-welcome",
+    "name": "Email Welcome — Growth Engine",
+    "description": "4 messages, with split (4E/0S)",
+    "triggerEvent": "When someone subscribes to the email list",
+    "emailCount": 4,
+    "smsCount": 0,
+    "hasSplit": true,
+    "splitCondition": "Has placed order (purchaser vs non-purchaser)",
+    "splitSegments": {
+      "yes": {
+        "email": 1,
+        "sms": 0
+      },
+      "no": {
+        "email": 3,
+        "sms": 0
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.023Z",
+    "updatedAt": "2026-02-12T14:48:19.023Z"
+  },
+  {
+    "id": "full_email_welcome",
+    "flowType": "email-welcome",
+    "name": "Email Welcome — Full System",
+    "description": "6 messages, with split (6E/0S)",
+    "triggerEvent": "When someone subscribes to the email list",
+    "emailCount": 7,
+    "smsCount": 0,
+    "hasSplit": true,
+    "splitCondition": "Has placed order (purchaser vs non-purchaser)",
+    "splitSegments": {
+      "yes": {
+        "email": 2,
+        "sms": 0
+      },
+      "no": {
+        "email": 4,
+        "sms": 0
+      }
+    },
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.039Z",
+    "updatedAt": "2026-02-12T15:21:22.512Z"
+  },
+  {
+    "id": "email-welcome_1770909756841",
+    "flowType": "email-welcome",
+    "name": "Email Welcome Naboni",
+    "description": "The description of Email Welcome Naboni",
+    "triggerEvent": "Sign up",
+    "emailCount": 5,
+    "smsCount": 0,
+    "hasSplit": true,
+    "splitSegments": {
+      "yes": {
+        "email": 2,
+        "sms": 0
+      },
+      "no": {
+        "email": 3,
+        "sms": 0
+      }
+    },
+    "isDefault": false,
+    "createdAt": "2026-02-12T15:22:36.843Z",
+    "updatedAt": "2026-02-12T15:22:36.843Z"
+  }
+]

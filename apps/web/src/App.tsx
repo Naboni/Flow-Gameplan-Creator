@@ -23,6 +23,8 @@ import { API_BASE, EDGE_STYLE, PLAN_OPTIONS, VIEWER_CHOICES, rfContainerWidth } 
 import { FlowCanvasNode } from "./components/FlowCanvasNode";
 import { SmartEdge } from "./components/SmartEdge";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { LibraryView } from "./components/LibraryView";
+import { CustomPlanBuilder } from "./components/CustomPlanBuilder";
 import {
   createFlowNode,
   downloadBlob,
@@ -47,6 +49,7 @@ function AppInner() {
   const [genResult, setGenResult] = useState<GeneratedResult | null>(null);
   const [genError, setGenError] = useState("");
   const [activeFlowIndex, setActiveFlowIndex] = useState(0);
+  const [customTemplateIds, setCustomTemplateIds] = useState<string[]>([]);
 
   /* viewer tab */
   const [viewerChoice, setViewerChoice] = useState<TemplateChoice>("welcome-series");
@@ -223,9 +226,17 @@ function AppInner() {
 
   /* ── generate flow gameplan ── */
 
+  const handleCustomSelectionChange = useCallback((ids: string[]) => {
+    setCustomTemplateIds(ids);
+  }, []);
+
   async function handleGenerate() {
     if (!genUrl.trim() || !genBrand.trim()) {
       setGenError("Please enter a website URL and brand name.");
+      return;
+    }
+    if (genPlan === "custom" && customTemplateIds.length === 0) {
+      setGenError("Select at least one template from the library.");
       return;
     }
     setGenBusy(true);
@@ -245,10 +256,14 @@ function AppInner() {
       const { profile } = (await analyzeRes.json()) as { profile: BrandProfile };
 
       setGenStep("generating");
+      const genBody = genPlan === "custom"
+        ? { customTemplateIds, brandProfile: profile }
+        : { planKey: genPlan, brandProfile: profile };
+
       const generateRes = await fetch(`${API_BASE}/api/generate-flows`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planKey: genPlan, brandProfile: profile })
+        body: JSON.stringify(genBody)
       });
       if (!generateRes.ok) {
         const err = await generateRes.json().catch(() => ({ error: "Flow generation failed" }));
@@ -381,6 +396,9 @@ function AppInner() {
           <button type="button" className={`sidebar-btn ${tab === "editor" ? "active" : ""}`} onClick={() => switchTab("editor")}>
             Editor
           </button>
+          <button type="button" className={`sidebar-btn ${tab === "library" ? "active" : ""}`} onClick={() => switchTab("library")}>
+            Library
+          </button>
 
           {/* generate sidebar */}
           {tab === "generate" ? (
@@ -419,6 +437,13 @@ function AppInner() {
                   ))}
                 </select>
                 <small className="hint">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</small>
+
+                {genPlan === "custom" && (
+                  <>
+                    <label>Select templates</label>
+                    <CustomPlanBuilder disabled={genBusy} onSelectionChange={handleCustomSelectionChange} />
+                  </>
+                )}
 
                 <label>Client website URL</label>
                 <input type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
@@ -524,13 +549,15 @@ function AppInner() {
               );
             })()}
             <span className="mode-pill">
-              {tab === "generate" ? "Generate" : tab === "viewer" ? "Viewer" : "Editor"}
+              {tab === "generate" ? "Generate" : tab === "viewer" ? "Viewer" : tab === "editor" ? "Editor" : "Library"}
             </span>
             {notice ? <span className="notice">{notice}</span> : null}
           </header>
 
           <div className="canvas-wrap" ref={canvasCaptureRef}>
-            {tab === "generate" && genStep !== "done" ? (
+            {tab === "library" ? (
+              <LibraryView />
+            ) : tab === "generate" && genStep !== "done" ? (
               <div className="generate-placeholder">
                 <div className="gen-placeholder-inner">
                   {genBusy ? (

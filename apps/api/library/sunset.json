@@ -1,0 +1,15 @@
+[
+  {
+    "id": "full_sunset",
+    "flowType": "sunset",
+    "name": "Sunset — Full System",
+    "description": "3 messages (3E/0S)",
+    "triggerEvent": "When someone has not engaged in 90+ days",
+    "emailCount": 3,
+    "smsCount": 0,
+    "hasSplit": false,
+    "isDefault": true,
+    "createdAt": "2026-02-12T14:48:19.053Z",
+    "updatedAt": "2026-02-12T14:48:19.053Z"
+  }
+]
