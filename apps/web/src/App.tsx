@@ -66,9 +66,9 @@ type GeneratedResult = {
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/, "");
 
 const EDGE_STYLE = {
-  markerEnd: { type: MarkerType.ArrowClosed, color: "#6f7b91" },
-  style: { stroke: "#6f7b91", strokeWidth: 2 },
-  labelStyle: { fill: "#51607d", fontWeight: 700, fontSize: 12 }
+  markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+  style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+  labelStyle: { fill: "#475569", fontWeight: 600, fontSize: 11 }
 } as const;
 
 const VIEWER_CHOICES: Array<{ label: string; value: TemplateChoice }> = [
@@ -84,6 +84,47 @@ const PLAN_OPTIONS: Array<{ label: string; value: PlanKey; desc: string }> = [
   { label: "Growth Engine", value: "growth-engine", desc: "8 flows — scaling to $1-2M/yr" },
   { label: "Full System", value: "full-system", desc: "9 flows — scaling to $2-20M/yr" }
 ];
+
+/* ── node icons (inline SVG) ── */
+
+const NodeIcons = {
+  trigger: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+    </svg>
+  ),
+  email: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,7 12,14 2,7"/>
+    </svg>
+  ),
+  sms: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  ),
+  wait: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/>
+    </svg>
+  ),
+  split: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+      <path d="M18 9a9 9 0 0 1-9 9"/>
+    </svg>
+  ),
+  outcome: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22,4 12,14.01 9,11.01"/>
+    </svg>
+  ),
+  filter: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46"/>
+    </svg>
+  ),
+};
 
 /* ── helpers ── */
 
@@ -209,25 +250,69 @@ function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]): FlowSp
   } as FlowSpec;
 }
 
-/* ── custom node component ── */
+/* ── custom node component (Klaviyo-style) ── */
 
 function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
-  if (data.nodeType === "note") {
+  const fn = data.flowNode;
+
+  /* ── note node ── */
+  if (fn.type === "note") {
     return (
-      <div className={`canvas-node canvas-node-note ${selected ? "selected" : ""}`}>
-        <div className="note-title">{data.title}</div>
-        <div className="note-body">{data.subtitle}</div>
-        <Handle type="source" position={Position.Right} className="node-handle note-handle" />
+      <div className={`flow-note ${selected ? "flow-note--selected" : ""}`}>
+        <div className="flow-note__title">{data.title}</div>
+        <div className="flow-note__body">{fn.body}</div>
+        <Handle type="source" position={Position.Right} className="flow-handle flow-handle--note" />
       </div>
     );
   }
+
+  /* ── wait node (compact) ── */
+  if (fn.type === "wait") {
+    return (
+      <div className={`flow-card flow-card--wait ${selected ? "flow-card--selected" : ""}`}>
+        <Handle type="target" position={Position.Top} className="flow-handle" />
+        <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
+        <div className="flow-card__header">
+          <div className="flow-card__icon flow-card__icon--wait">{NodeIcons.wait}</div>
+          <span className="flow-card__title">Wait {fn.duration.value} {fn.duration.unit}</span>
+        </div>
+        <Handle type="source" position={Position.Bottom} className="flow-handle" />
+      </div>
+    );
+  }
+
+  /* ── all other nodes ── */
+  const typeKey = fn.type === "message" ? fn.channel
+    : fn.type === "profileFilter" ? "filter"
+    : fn.type;
+
+  const icon = fn.type === "message"
+    ? (fn.channel === "sms" ? NodeIcons.sms : NodeIcons.email)
+    : fn.type === "profileFilter" ? NodeIcons.filter
+    : NodeIcons[fn.type as keyof typeof NodeIcons];
+
+  let subtitle = "";
+  if (fn.type === "trigger") subtitle = fn.event;
+  else if (fn.type === "message") subtitle = fn.copyHint || "";
+  else if (fn.type === "split") subtitle = fn.condition;
+  else if (fn.type === "outcome") subtitle = fn.result;
+  else if (fn.type === "profileFilter") subtitle = fn.filters.join(", ");
+
   return (
-    <div className={`canvas-node canvas-node-${data.nodeType} ${selected ? "selected" : ""}`}>
-      <Handle type="target" position={Position.Top} className="node-handle" />
-      <Handle type="target" position={Position.Left} id="left" className="node-handle" />
-      <div className="node-title">{data.title}</div>
-      <div className="node-subtitle">{data.subtitle}</div>
-      <Handle type="source" position={Position.Bottom} className="node-handle" />
+    <div className={`flow-card flow-card--${typeKey} ${selected ? "flow-card--selected" : ""}`}>
+      <Handle type="target" position={Position.Top} className="flow-handle" />
+      <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
+      <div className="flow-card__header">
+        <div className={`flow-card__icon flow-card__icon--${typeKey}`}>{icon}</div>
+        <div className="flow-card__title">{data.title}</div>
+      </div>
+      {subtitle && <div className="flow-card__subtitle">{subtitle}</div>}
+      {fn.type === "message" && (
+        <div className="flow-card__footer">
+          <span className={`flow-badge flow-badge--${fn.channel}`}>{fn.channel.toUpperCase()}</span>
+        </div>
+      )}
+      <Handle type="source" position={Position.Bottom} className="flow-handle" />
     </div>
   );
 }
@@ -791,7 +876,7 @@ function AppInner() {
                 panOnDrag
                 defaultEdgeOptions={{ type: "default", ...EDGE_STYLE }}
               >
-                <Background color="#d6deef" gap={24} />
+                <Background color="#e2e8f0" gap={24} />
                 <MiniMap pannable zoomable />
                 <Controls />
               </ReactFlow>
