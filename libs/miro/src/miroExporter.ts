@@ -71,9 +71,11 @@ async function requestWithRetry<T>(
     const retryable = response.status === 429 || response.status >= 500;
     if (!retryable || attempt >= maxRetries) {
       const body = await response.text();
+      console.error(`Miro API error (${response.status}):`, body);
       const error: MiroApiError = { status: response.status, body };
       throw error;
     }
+    console.warn(`Miro API returned ${response.status}, retrying (attempt ${attempt + 1}/${maxRetries})...`);
     const delayMs = getRetryDelayMs(response, attempt);
     await sleep(delayMs);
     attempt += 1;
@@ -121,11 +123,21 @@ function nodeContent(specNode: FlowSpec["nodes"][number]): string {
   }
 
   if (specNode.type === "message") {
-    const badge = specNode.channel.toUpperCase();
-    const hint = "copyHint" in specNode && specNode.copyHint
-      ? `<br/>${escapeHtml(specNode.copyHint)}`
-      : "";
-    return `<p><strong>${escapeHtml(title)}</strong>${hint}<br/><em>${badge}</em></p>`;
+    let sections = `<p><strong>${escapeHtml(title)}</strong></p>`;
+    if (specNode.discountCode) {
+      const icon = specNode.discountCode.included ? "[YES]" : "[NO]";
+      const text = specNode.discountCode.included
+        ? (specNode.discountCode.description || specNode.discountCode.code || "discount code")
+        : "no discount code";
+      sections += `<p>${icon} ${escapeHtml(text)}</p>`;
+    }
+    if (specNode.abTest) {
+      sections += `<p><strong>A/B Test:</strong> ${escapeHtml(specNode.abTest.description)}</p>`;
+    }
+    if (specNode.messagingFocus) {
+      sections += `<p><strong>Messaging:</strong> ${escapeHtml(specNode.messagingFocus)}</p>`;
+    }
+    return sections;
   }
 
   if (specNode.type === "split") {

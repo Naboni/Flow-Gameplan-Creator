@@ -8,7 +8,11 @@ export const EDGE_STYLE = {
   type: "smartEdge" as const,
   markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
   style: { stroke: "#94a3b8", strokeWidth: 1.5 },
-  labelStyle: { fill: "#475569", fontWeight: 600, fontSize: 11 }
+  labelStyle: { fill: "#475569", fontWeight: 600, fontSize: 11 },
+  labelShowBg: true,
+  labelBgStyle: { fill: "#ffffff", fillOpacity: 1 },
+  labelBgPadding: [6, 4] as [number, number],
+  labelBgBorderRadius: 4
 } as const;
 
 export const VIEWER_CHOICES: Array<{ label: string; value: TemplateChoice }> = [

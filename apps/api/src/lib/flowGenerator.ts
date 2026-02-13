@@ -9,6 +9,9 @@ type StepContent = {
   channel: "email" | "sms";
   copyHint: string;
   subjectLine?: string;
+  discountCode?: { included: boolean; code?: string; description?: string };
+  abTest?: { description: string };
+  messagingFocus?: string;
 };
 
 type NoteContent = {
@@ -47,7 +50,7 @@ type FlowNode =
   | { id: string; type: "profileFilter"; title: string; filters: string[] }
   | { id: string; type: "split"; title: string; condition: string; labels: { yes: string; no: string } }
   | { id: string; type: "wait"; duration: { value: number; unit: "minutes" | "hours" | "days" } }
-  | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string }
+  | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string; discountCode?: { included: boolean; code?: string; description?: string }; abTest?: { description: string }; messagingFocus?: string }
   | { id: string; type: "outcome"; title: string; result: string }
   | { id: string; type: "note"; title: string; body: string }
   | { id: string; type: "strategy"; title: string; primaryFocus: string; secondaryFocus: string; branchLabel?: "yes" | "no" };
@@ -109,11 +112,15 @@ ${blueprint.structureNote ? `Note: ${blueprint.structureNote}` : ""}
 
 INSTRUCTIONS:
 1. For each message step, provide a title, channel (email/sms), a copy hint (1-2 sentences describing what the message should say), and a subject line suggestion for emails.
-2. Tailor all content to the brand's voice, products, and audience.
-3. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
-4. Provide OBJECTIVE/FOCUS notes for steps that have a specific strategic purpose worth calling out — for example: the first touchpoint that sets the tone, a message that introduces a discount or offer, a re-engagement attempt, or a key conversion email. Typically 1-2 notes per branch is right. Each note should reference which step number it's about (1-indexed). Return an empty array only if every step is straightforward with nothing worth highlighting.
-5. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
-6. ${blueprint.hasSplit
+2. For each message step, also provide:
+   - "discountCode": { "included": true/false, "description": "short generic note like 'Include a discount code to drive urgency'" (if included) }. Decide strategically which steps should offer discounts — typically later in the flow to create urgency, not in the first touch. Do NOT invent actual discount codes — just indicate whether this step should include one and describe the purpose.
+   - "abTest": { "description": "what is being A/B tested" } — only include this for steps where A/B testing adds strategic value (e.g., testing subject lines, formats, approaches). Not every step needs one.
+   - "messagingFocus": a short label describing the messaging strategy of that step (e.g., "Cart Reminders, Familiarity & Trust", "Social Proof + First-Time Discount", "Final Urgency, Stock & Scarcity").
+3. Tailor all content to the brand's voice, products, and audience.
+4. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
+5. Provide OBJECTIVE/FOCUS notes for steps that have a specific strategic purpose worth calling out — for example: the first touchpoint that sets the tone, a message that introduces a discount or offer, a re-engagement attempt, or a key conversion email. Typically 1-2 notes per branch is right. Each note should reference which step number it's about (1-indexed). Return an empty array only if every step is straightforward with nothing worth highlighting.
+6. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
+7. ${blueprint.hasSplit
     ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
     : "Provide a STRATEGY for the main flow with primaryFocus and secondaryFocus."}
 
@@ -122,8 +129,8 @@ Return ONLY valid JSON matching this exact schema:
   "flowName": "string",
   "triggerDescription": "string (tailored trigger description)",
   "splitConditionTailored": "string or null",
-  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined" }],
-  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined" }],
+  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": false }, "abTest": { "description": "string" } | null, "messagingFocus": "string" }],
+  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": true, "description": "Include a discount to drive urgency" }, "abTest": null, "messagingFocus": "string" }],
   "notes": [{ "title": "OBJECTIVE/FOCUS:", "body": "string", "attachToStep": number }],
   "waitDurations": [{ "value": number, "unit": "hours|days" }],
   "yesStrategy": { "primaryFocus": "string", "secondaryFocus": "string" },
@@ -187,7 +194,10 @@ function assembleFlowSpec(
         type: "message",
         channel: steps[i].channel,
         title: steps[i].title,
-        copyHint: steps[i].copyHint
+        copyHint: steps[i].copyHint,
+        ...(steps[i].discountCode ? { discountCode: steps[i].discountCode } : {}),
+        ...(steps[i].abTest ? { abTest: steps[i].abTest } : {}),
+        ...(steps[i].messagingFocus ? { messagingFocus: steps[i].messagingFocus } : {})
       });
       edges.push({ id: nextEdgeId(), from: prevId, to: stepId });
       prevId = stepId;
@@ -229,7 +239,10 @@ function assembleFlowSpec(
         type: "message",
         channel: content.yesSteps[i].channel,
         title: content.yesSteps[i].title,
-        copyHint: content.yesSteps[i].copyHint
+        copyHint: content.yesSteps[i].copyHint,
+        ...(content.yesSteps[i].discountCode ? { discountCode: content.yesSteps[i].discountCode } : {}),
+        ...(content.yesSteps[i].abTest ? { abTest: content.yesSteps[i].abTest } : {}),
+        ...(content.yesSteps[i].messagingFocus ? { messagingFocus: content.yesSteps[i].messagingFocus } : {})
       });
       edges.push({
         id: nextEdgeId(),
@@ -262,7 +275,10 @@ function assembleFlowSpec(
         type: "message",
         channel: content.noSteps[i].channel,
         title: content.noSteps[i].title,
-        copyHint: content.noSteps[i].copyHint
+        copyHint: content.noSteps[i].copyHint,
+        ...(content.noSteps[i].discountCode ? { discountCode: content.noSteps[i].discountCode } : {}),
+        ...(content.noSteps[i].abTest ? { abTest: content.noSteps[i].abTest } : {}),
+        ...(content.noSteps[i].messagingFocus ? { messagingFocus: content.noSteps[i].messagingFocus } : {})
       });
       edges.push({
         id: nextEdgeId(),
@@ -444,24 +460,24 @@ function buildFallbackContent(
   if (blueprint.hasSplit && blueprint.splitSegments) {
     const yes = blueprint.splitSegments.yes;
     for (let i = 0; i < yes.email; i++) {
-      yesSteps.push({ title: `Email ${i + 1} (Yes)`, channel: "email", copyHint: `Email for ${brand.brandName} yes-branch customers` });
+      yesSteps.push({ title: `Email ${i + 1} (Yes)`, channel: "email", copyHint: `Email for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Brand Engagement" });
     }
     for (let i = 0; i < yes.sms; i++) {
-      yesSteps.push({ title: `SMS ${i + 1} (Yes)`, channel: "sms", copyHint: `SMS for ${brand.brandName} yes-branch customers` });
+      yesSteps.push({ title: `SMS ${i + 1} (Yes)`, channel: "sms", copyHint: `SMS for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
     }
     const no = blueprint.splitSegments.no;
     for (let i = 0; i < no.email; i++) {
-      noSteps.push({ title: `Email ${i + 1} (No)`, channel: "email", copyHint: `Email for ${brand.brandName} no-branch customers` });
+      noSteps.push({ title: `Email ${i + 1} (No)`, channel: "email", copyHint: `Email for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Trust Building" });
     }
     for (let i = 0; i < no.sms; i++) {
-      noSteps.push({ title: `SMS ${i + 1} (No)`, channel: "sms", copyHint: `SMS for ${brand.brandName} no-branch customers` });
+      noSteps.push({ title: `SMS ${i + 1} (No)`, channel: "sms", copyHint: `SMS for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
     }
   } else {
     for (let i = 0; i < blueprint.emailCount; i++) {
-      yesSteps.push({ title: `Email ${i + 1}`, channel: "email", copyHint: `Email for ${brand.brandName}` });
+      yesSteps.push({ title: `Email ${i + 1}`, channel: "email", copyHint: `Email for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Brand Engagement" });
     }
     for (let i = 0; i < blueprint.smsCount; i++) {
-      yesSteps.push({ title: `SMS ${i + 1}`, channel: "sms", copyHint: `SMS for ${brand.brandName}` });
+      yesSteps.push({ title: `SMS ${i + 1}`, channel: "sms", copyHint: `SMS for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
     }
   }
 

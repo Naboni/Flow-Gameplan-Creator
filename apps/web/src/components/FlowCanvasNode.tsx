@@ -76,8 +76,30 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
       </div>
       {subtitle && <div className="flow-card__subtitle">{subtitle}</div>}
       {fn.type === "message" && (
-        <div className="flow-card__footer">
-          <span className={`flow-badge flow-badge--${fn.channel}`}>{fn.channel.toUpperCase()}</span>
+        <div className="flow-card__sections">
+          {/* discount code row */}
+          <div className={`flow-card__row ${fn.discountCode?.included ? "flow-card__row--yes" : "flow-card__row--no"}`}>
+            <span className="flow-card__row-icon">{fn.discountCode?.included ? "✓" : "✗"}</span>
+            <span className="flow-card__row-text">
+              {fn.discountCode?.included
+                ? fn.discountCode.description || fn.discountCode.code || "discount code"
+                : "no discount code"}
+            </span>
+          </div>
+          {/* A/B test row */}
+          {fn.abTest && (
+            <div className="flow-card__row flow-card__row--neutral">
+              <span className="flow-card__row-label">A/B Test:</span>
+              <span className="flow-card__row-text">{fn.abTest.description}</span>
+            </div>
+          )}
+          {/* messaging focus row */}
+          {fn.messagingFocus && (
+            <div className="flow-card__row flow-card__row--neutral">
+              <span className="flow-card__row-label">Messaging:</span>
+              <span className="flow-card__row-text">{fn.messagingFocus}</span>
+            </div>
+          )}
         </div>
       )}
       <Handle type="source" position={Position.Bottom} className="flow-handle" />

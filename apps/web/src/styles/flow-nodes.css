@@ -99,6 +99,46 @@
 .flow-badge--email { background: #f0fdf4; color: #16a34a; }
 .flow-badge--sms { background: #fef2f2; color: #dc2626; }
 
+/* ── message card sections ── */
+
+.flow-card__sections {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+}
+
+.flow-card__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.flow-card__row-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 13px;
+  width: 16px;
+  text-align: center;
+}
+
+.flow-card__row--yes .flow-card__row-icon { color: #16a34a; }
+.flow-card__row--no .flow-card__row-icon { color: #dc2626; }
+
+.flow-card__row-label {
+  font-weight: 700;
+  color: #334155;
+  flex-shrink: 0;
+}
+
+.flow-card__row-text {
+  color: #475569;
+}
+
 /* ── note card ── */
 
 .flow-note {

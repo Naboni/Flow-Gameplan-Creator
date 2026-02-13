@@ -384,7 +384,9 @@ function AppInner() {
       const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: spec.ui?.nodePositions ?? {} });
       setNotice(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
     } catch (error) {
-      setNotice(typeof error === "object" && error && "status" in error ? `Miro export failed (${(error as { status: number }).status}).` : "Miro export failed.");
+      console.error("Miro export error:", error);
+      const status = typeof error === "object" && error && "status" in error ? (error as { status: number }).status : 0;
+      setNotice(status ? `Miro export failed (${status}). Check console for details.` : "Miro export failed.");
     } finally { setBusyMiroExport(false); }
   }
 

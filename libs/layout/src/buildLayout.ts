@@ -41,7 +41,7 @@ export type LayoutOptions = {
 
 const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides"> = {
   rowSpacing: 220,
-  laneSpacing: 420,
+  laneSpacing: 200,
   sameLaneOffset: 340,
   paddingX: 120,
   paddingY: 80
@@ -52,7 +52,7 @@ const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }>
   profileFilter: { width: 280, height: 100 },
   split: { width: 280, height: 100 },
   wait: { width: 280, height: 56 },
-  message: { width: 280, height: 110 },
+  message: { width: 280, height: 150 },
   outcome: { width: 280, height: 80 },
   note: { width: 320, height: 160 },
   strategy: { width: 320, height: 200 }
@@ -323,12 +323,8 @@ export function buildLayout(
     const size = NODE_SIZE_MAP[sideNode.type];
 
     if (targetPositioned) {
-      // Strategy nodes on "no" branch go to the RIGHT of their target
-      const placeRight =
-        sideNode.type === "strategy" &&
-        "branchLabel" in sideNode &&
-        sideNode.branchLabel === "no" &&
-        targetPositioned.lane > 0;
+      // Place side nodes on the OUTSIDE of their branch
+      const placeRight = targetPositioned.lane > 0;
 
       const xPos = placeRight
         ? targetPositioned.x + targetPositioned.width + SIDE_RIGHT_GAP

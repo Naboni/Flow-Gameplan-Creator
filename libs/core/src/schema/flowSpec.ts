@@ -76,6 +76,16 @@ const objectiveFocusSchema = z.object({
   bullets: z.array(z.string().min(1)).min(1)
 });
 
+const discountCodeSchema = z.object({
+  included: z.boolean(),
+  code: z.string().optional(),
+  description: z.string().optional()
+});
+
+const abTestSchema = z.object({
+  description: z.string().min(1)
+});
+
 const messageNodeSchema = z.object({
   id: nodeIdSchema,
   type: z.literal("message"),
@@ -84,7 +94,10 @@ const messageNodeSchema = z.object({
   stepIndex: z.number().int().positive().optional(),
   copyHint: z.string().optional(),
   objectiveFocus: objectiveFocusSchema.optional(),
-  tags: z.array(z.string().min(1)).optional()
+  tags: z.array(z.string().min(1)).optional(),
+  discountCode: discountCodeSchema.optional(),
+  abTest: abTestSchema.optional(),
+  messagingFocus: z.string().optional()
 });
 
 const outcomeNodeSchema = z.object({
