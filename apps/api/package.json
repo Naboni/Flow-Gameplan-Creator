@@ -5,21 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist --splitting=false --external:express --external:cors --external:dotenv --external:openai --external:cheerio",
     "start": "node dist/server.js"
   },
   "dependencies": {
     "@flow/core": "file:../../libs/core",
-    "express": "^4.21.0",
+    "cheerio": "^1.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "openai": "^4.77.0",
-    "cheerio": "^1.0.0"
+    "express": "^4.21.0",
+    "openai": "^4.77.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
+    "esbuild": "^0.27.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
