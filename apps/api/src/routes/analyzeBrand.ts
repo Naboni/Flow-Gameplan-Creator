@@ -1,12 +1,12 @@
 import type { Request, Response } from "express";
-import { analyzeBrand } from "../lib/brandAnalyzer.js";
+import { analyzeBrand, type BrandQuestionnaire } from "../lib/brandAnalyzer.js";
 
 export async function analyzeBrandRoute(req: Request, res: Response) {
   try {
-    const { websiteUrl, brandName, notes } = req.body as {
+    const { websiteUrl, brandName, questionnaire } = req.body as {
       websiteUrl?: string;
       brandName?: string;
-      notes?: string;
+      questionnaire?: BrandQuestionnaire;
     };
 
     if (!websiteUrl || !brandName) {
@@ -14,7 +14,7 @@ export async function analyzeBrandRoute(req: Request, res: Response) {
       return;
     }
 
-    const profile = await analyzeBrand(websiteUrl, brandName, notes);
+    const profile = await analyzeBrand(websiteUrl, brandName, questionnaire);
     res.json({ profile });
   } catch (error) {
     const message =

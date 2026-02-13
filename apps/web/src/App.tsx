@@ -17,15 +17,16 @@ import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
-import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send } from "lucide-react";
+import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2 } from "lucide-react";
 
-import type { AppNodeData, AppTab, BrandProfile, GeneratedResult, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
+import type { AppNodeData, AppTab, BrandProfile, BrandQuestionnaire as BrandQuestionnaireData, GeneratedResult, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
 import { API_BASE, EDGE_STYLE, PLAN_OPTIONS, VIEWER_CHOICES, rfContainerWidth } from "./constants";
 import { FlowCanvasNode } from "./components/FlowCanvasNode";
 import { SmartEdge } from "./components/SmartEdge";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LibraryView, FLOW_TYPES } from "./components/LibraryView";
 import { CustomPlanBuilder } from "./components/CustomPlanBuilder";
+import { BrandQuestionnaire } from "./components/BrandQuestionnaire";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -49,8 +50,9 @@ function AppInner() {
   const [genPlan, setGenPlan] = useState<PlanKey>("custom");
   const [genUrl, setGenUrl] = useState("");
   const [genBrand, setGenBrand] = useState("");
-  const [genNotes, setGenNotes] = useState("");
   const [genBusy, setGenBusy] = useState(false);
+  const [questionnaireData, setQuestionnaireData] = useState<BrandQuestionnaireData>({});
+  const [questionnaireOpen, setQuestionnaireOpen] = useState(false);
   const [genStep, setGenStep] = useState<"form" | "analyzing" | "generating" | "done">("form");
   const [genResult, setGenResult] = useState<GeneratedResult | null>(null);
   const [genError, setGenError] = useState("");
@@ -82,6 +84,15 @@ function AppInner() {
   const reactFlowRef = useRef<{ screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number } } | null>(null);
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
   const edgeTypes = useMemo(() => ({ smartEdge: SmartEdge }), []);
+
+  const questionnaireAnsweredCount = [
+    questionnaireData.businessType,
+    questionnaireData.businessStage,
+    questionnaireData.emailListSize,
+    questionnaireData.discountApproach,
+    questionnaireData.keyDifferentiators?.length ? "yes" : undefined,
+    questionnaireData.brandTone,
+  ].filter(Boolean).length;
 
   /* ── computed specs and nodes ── */
 
@@ -259,10 +270,15 @@ function AppInner() {
     setGenStep("analyzing");
 
     try {
+      const hasQuestionnaire = questionnaireAnsweredCount > 0;
       const analyzeRes = await fetch(`${API_BASE}/api/analyze-brand`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ websiteUrl: genUrl.trim(), brandName: genBrand.trim(), notes: genNotes.trim() || undefined })
+        body: JSON.stringify({
+          websiteUrl: genUrl.trim(),
+          brandName: genBrand.trim(),
+          ...(hasQuestionnaire ? { questionnaire: questionnaireData } : {})
+        })
       });
       if (!analyzeRes.ok) {
         const err = await analyzeRes.json().catch(() => ({ error: "Brand analysis failed" }));
@@ -495,7 +511,7 @@ function AppInner() {
 
                     {genPlan === "custom" && (
                       <div className="flex flex-col gap-1.5">
-                        <Label>Select templates</Label>
+                        <Label>Templates</Label>
                         <CustomPlanBuilder disabled={genBusy} onSelectionChange={handleCustomSelectionChange} />
                       </div>
                     )}
@@ -511,15 +527,27 @@ function AppInner() {
                     </div>
 
                     <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="gen-notes">Additional notes (optional)</Label>
-                      <Textarea
-                        id="gen-notes"
-                        rows={3}
-                        placeholder="Products, audience, tone, discount codes..."
-                        value={genNotes}
-                        onChange={(e) => setGenNotes(e.target.value)}
+                      <Label>Brand Details</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => setQuestionnaireOpen(true)}
                         disabled={genBusy}
-                      />
+                      >
+                        {questionnaireAnsweredCount > 0 ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 mr-1.5 text-green-600" />
+                            <span className="text-green-700">{questionnaireAnsweredCount}/6 answered</span>
+                          </>
+                        ) : (
+                          <>
+                            <ClipboardList className="w-4 h-4 mr-1.5" />
+                            Fill brand questionnaire
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">Quick questions to improve AI output quality.</p>
                     </div>
 
                     <Button className="mt-1" onClick={handleGenerate} disabled={genBusy}>
@@ -804,6 +832,12 @@ function AppInner() {
           </aside>
           )}
       </div>
+      <BrandQuestionnaire
+        open={questionnaireOpen}
+        onOpenChange={setQuestionnaireOpen}
+        data={questionnaireData}
+        onSave={setQuestionnaireData}
+      />
     </ReactFlowProvider>
   );
 }

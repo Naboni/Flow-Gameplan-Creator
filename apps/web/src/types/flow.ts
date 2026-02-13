@@ -12,6 +12,19 @@ export type AppNodeData = {
   flowNode: FlowNode;
 };
 
+export type BrandQuestionnaire = {
+  businessType?: string;
+  businessStage?: string;
+  emailListSize?: string;
+  priceRange?: string;
+  averageOrderValue?: string;
+  discountApproach?: string;
+  keyDifferentiators?: string[];
+  brandTone?: string;
+  competitors?: string;
+  specialInstructions?: string;
+};
+
 export type BrandProfile = {
   brandName: string;
   industry: string;
@@ -21,6 +34,15 @@ export type BrandProfile = {
   uniqueSellingPoints: string[];
   discountStrategy: string;
   summary: string;
+  priceRange: string;
+  averageOrderValue: string;
+  businessStage: string;
+  emailListSize: string;
+  discountApproach: string;
+  keyDifferentiators: string[];
+  brandTone: string;
+  competitors: string;
+  specialInstructions: string;
 };
 
 export type GeneratedResult = {

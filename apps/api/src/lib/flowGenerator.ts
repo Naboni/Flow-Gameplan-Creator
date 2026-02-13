@@ -89,6 +89,17 @@ Split condition template: "${blueprint.splitCondition}"`;
     structureDesc = `This is a linear flow (no split) with ${blueprint.emailCount} emails and ${blueprint.smsCount} SMS.`;
   }
 
+  const extraProfileLines: string[] = [];
+  if (brand.priceRange && brand.priceRange !== "unknown") extraProfileLines.push(`- Price range: ${brand.priceRange}`);
+  if (brand.averageOrderValue && brand.averageOrderValue !== "unknown") extraProfileLines.push(`- Average order value: ${brand.averageOrderValue}`);
+  if (brand.businessStage && brand.businessStage !== "unknown") extraProfileLines.push(`- Business stage: ${brand.businessStage}`);
+  if (brand.emailListSize && brand.emailListSize !== "unknown") extraProfileLines.push(`- Email list size: ${brand.emailListSize}`);
+  if (brand.discountApproach && brand.discountApproach !== "unknown") extraProfileLines.push(`- Discount approach: ${brand.discountApproach}`);
+  if (brand.keyDifferentiators?.length) extraProfileLines.push(`- Key differentiators: ${brand.keyDifferentiators.join(", ")}`);
+  if (brand.brandTone && brand.brandTone !== "friendly and professional") extraProfileLines.push(`- Brand tone: ${brand.brandTone}`);
+  if (brand.competitors && brand.competitors !== "unknown") extraProfileLines.push(`- Competitors: ${brand.competitors}`);
+  if (brand.specialInstructions) extraProfileLines.push(`- Special instructions: ${brand.specialInstructions}`);
+
   return `You are a senior email/SMS marketing strategist at ZHS Ecom, an agency specializing in Klaviyo retention flows for ecommerce brands.
 
 Generate tailored content for a "${blueprint.name}" flow for this brand:
@@ -102,6 +113,7 @@ BRAND PROFILE:
 - USPs: ${brand.uniqueSellingPoints.join(", ")}
 - Discount strategy: ${brand.discountStrategy}
 - Summary: ${brand.summary}
+${extraProfileLines.length > 0 ? extraProfileLines.join("\n") : ""}
 
 FLOW STRUCTURE:
 - Flow type: ${blueprint.name}
@@ -123,6 +135,8 @@ INSTRUCTIONS:
 7. ${blueprint.hasSplit
     ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
     : "Provide a STRATEGY for the main flow with primaryFocus and secondaryFocus."}
+8. If the brand profile includes price range, AOV, discount approach, or competitors — use that context to shape the messaging strategy. For example, a premium brand that "never discounts" should focus on value and exclusivity, while one with "regular discounts" can lead with offers. Tailor tone and urgency to the brand tone (e.g., "luxury & refined" vs "bold & energetic").
+9. If special instructions are provided, follow them exactly (e.g., specific discount codes, topics to avoid, promotions to mention).
 
 Return ONLY valid JSON matching this exact schema:
 {
