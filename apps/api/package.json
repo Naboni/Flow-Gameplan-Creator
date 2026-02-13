@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist --splitting=false --external:express --external:cors --external:dotenv --external:openai --external:cheerio",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --outdir=dist --splitting=false --external:express --external:cors --external:dotenv --external:openai --external:cheerio --external:zod",
     "start": "node dist/server.js"
   },
   "dependencies": {
@@ -14,7 +14,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "openai": "^4.77.0"
+    "openai": "^4.77.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
