@@ -48,6 +48,31 @@ export type ExpandTemplateOptions = {
 
 const DEFAULT_DELAY: DelayConfig = { value: 1, unit: "days" };
 
+const MESSAGING_FOCI = [
+  "Introduction & Engagement",
+  "Service Highlights & Value Proposition",
+  "Re-engagement & Conversion",
+  "Final Urgency, Stock & Scarcity"
+] as const;
+
+function defaultMessageContent(
+  stepIndex: number,
+  totalSteps: number,
+  channel: "email" | "sms",
+  branchLabel?: string
+): { copyHint: string; discountCode: { included: boolean; description?: string }; messagingFocus: string } {
+  const focus = MESSAGING_FOCI[Math.min(stepIndex - 1, MESSAGING_FOCI.length - 1)];
+  const includeDiscount = stepIndex >= Math.max(2, totalSteps - 1);
+  const suffix = branchLabel ? ` (${branchLabel} branch)` : "";
+  return {
+    copyHint: `${channel === "email" ? "Email" : "SMS"} step ${stepIndex}${suffix}: reinforce brand value and move subscribers toward conversion.`,
+    discountCode: includeDiscount
+      ? { included: true, description: "Include a discount to drive urgency" }
+      : { included: false },
+    messagingFocus: focus
+  };
+}
+
 function withDelay(options?: ExpandTemplateOptions): DelayConfig {
   return options?.defaultDelay ?? DEFAULT_DELAY;
 }
@@ -91,12 +116,16 @@ function createLinearFlow(
     let previousId = `${flowId}_trigger`;
     for (let i = 1; i <= count; i += 1) {
       const messageId = createMessageNodeId(flowId, "linear", channel, i);
+      const content = defaultMessageContent(i, count, channel);
       nodes.push({
         id: messageId,
         type: "message",
         channel,
-        title: `${channel.toUpperCase()} ${i}`,
-        stepIndex: i
+        title: `${channel === "email" ? "Email" : "SMS"} ${i}`,
+        stepIndex: i,
+        copyHint: content.copyHint,
+        discountCode: content.discountCode,
+        messagingFocus: content.messagingFocus
       });
       edges.push({
         id: `${flowId}_e_${previousId}_to_${messageId}`,
@@ -131,7 +160,7 @@ function createLinearFlow(
   nodes.push({
     id: outcomeId,
     type: "outcome",
-    title: "Outcome",
+    title: "Path Complete",
     result: "Flow completed"
   });
 
@@ -177,12 +206,16 @@ function buildBranchLane(
   let previousId = splitId;
   for (let i = 1; i <= count; i += 1) {
     const messageId = createMessageNodeId(flowId, branchKey, channel, i);
+    const content = defaultMessageContent(i, count, channel, branchLabel);
     nodes.push({
       id: messageId,
       type: "message",
       channel,
-      title: `${channel.toUpperCase()} ${i} (${branchLabel})`,
-      stepIndex: i
+      title: `${channel === "email" ? "Email" : "SMS"} ${i} (${branchLabel})`,
+      stepIndex: i,
+      copyHint: content.copyHint,
+      discountCode: content.discountCode,
+      messagingFocus: content.messagingFocus
     });
     edges.push({
       id: `${flowId}_e_${previousId}_to_${messageId}_${channel}_${branchKey}_${i}`,
@@ -265,14 +298,14 @@ function createSplitFlow(
   nodes.push({
     id: yesOutcomeId,
     type: "outcome",
-    title: "Outcome",
-    result: `${yesLabel} branch completed`
+    title: `${yesLabel} Path Complete`,
+    result: `${yesLabel} path completed`
   });
   nodes.push({
     id: noOutcomeId,
     type: "outcome",
-    title: "Outcome",
-    result: `${noLabel} branch completed`
+    title: `${noLabel} Path Complete`,
+    result: `${noLabel} path completed`
   });
 
   for (const laneEnd of yesLaneEnds) {
@@ -358,7 +391,7 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "core_email_welcome",
       name: "Email Welcome",
-      triggerEvent: "When someone subscribes",
+      triggerEvent: "Triggered when a user signs up for updates from your brand.",
       emailCount: 3,
       smsCount: 0
     },
@@ -368,7 +401,7 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "core_sms_welcome",
       name: "SMS Welcome",
-      triggerEvent: "When someone opts in to SMS",
+      triggerEvent: "Triggered when a user opts in to SMS updates.",
       emailCount: 0,
       smsCount: 2
     },
@@ -378,7 +411,7 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "core_checkout_abandonment",
       name: "Checkout Abandonment",
-      triggerEvent: "When someone starts checkout but does not purchase",
+      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
       emailCount: 2,
       smsCount: 2
     },
@@ -388,13 +421,13 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
     checkoutAbandonment,
     "core_cart_abandonment",
     "Cart Abandonment",
-    "When someone adds to cart but does not purchase"
+    "Triggered when someone adds to cart but does not purchase."
   );
   const browseAbandonment = createLinearFlow(
     {
       id: "core_browse_abandonment",
       name: "Browse Abandonment",
-      triggerEvent: "When someone views products but does not add to cart",
+      triggerEvent: "Triggered when someone views products but does not add to cart.",
       emailCount: 2,
       smsCount: 2
     },
@@ -404,7 +437,7 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "core_post_purchase",
       name: "Post-Purchase",
-      triggerEvent: "When someone places an order",
+      triggerEvent: "Triggered when someone places an order.",
       emailCount: 1,
       smsCount: 1
     },
@@ -438,8 +471,8 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_email_welcome",
       name: "Email Welcome",
-      triggerEvent: "When someone subscribes",
-      splitCondition: "Has placed order at least once",
+      triggerEvent: "Triggered when a user signs up for updates from your brand.",
+      splitCondition: "User has purchased a service or product",
       yesCounts: { email: 1, sms: 0 },
       noCounts: { email: 3, sms: 0 },
       yesLabel: "Yes",
@@ -451,8 +484,8 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_sms_welcome",
       name: "SMS Welcome",
-      triggerEvent: "When someone opts in to SMS",
-      splitCondition: "Has placed order at least once",
+      triggerEvent: "Triggered when a user opts in to SMS updates.",
+      splitCondition: "User has purchased a service or product",
       yesCounts: { email: 0, sms: 1 },
       noCounts: { email: 0, sms: 2 },
       yesLabel: "Yes",
@@ -464,8 +497,8 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_checkout_abandonment",
       name: "Checkout Abandonment",
-      triggerEvent: "When someone starts checkout but does not purchase",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 3, sms: 2 },
       noCounts: { email: 3, sms: 2 }
     },
@@ -475,14 +508,14 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     checkoutAbandonment,
     "growth_cart_abandonment",
     "Cart Abandonment",
-    "When someone adds to cart but does not purchase"
+    "Triggered when someone adds to cart but does not purchase."
   );
   const browseAbandonment = createSplitFlow(
     {
       id: "growth_browse_abandonment",
       name: "Browse Abandonment",
-      triggerEvent: "When someone browses products but does not add to cart",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone browses products but does not add to cart.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 3, sms: 2 },
       noCounts: { email: 3, sms: 2 }
     },
@@ -492,7 +525,7 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_site_abandonment",
       name: "Site Abandonment",
-      triggerEvent: "When someone visits site and exits without product view",
+      triggerEvent: "Triggered when someone visits site and exits without product view.",
       emailCount: 2,
       smsCount: 0
     },
@@ -502,8 +535,8 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_post_purchase",
       name: "Post-Purchase",
-      triggerEvent: "When someone places an order",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone places an order.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 2, sms: 1 },
       noCounts: { email: 1, sms: 1 }
     },
@@ -513,7 +546,7 @@ function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "growth_winback",
       name: "Winback",
-      triggerEvent: "When customer is inactive for defined window",
+      triggerEvent: "Triggered when customer is inactive for a defined window.",
       emailCount: 2,
       smsCount: 0
     },
@@ -556,8 +589,8 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_email_welcome",
       name: "Email Welcome",
-      triggerEvent: "When someone subscribes",
-      splitCondition: "Has placed order at least once",
+      triggerEvent: "Triggered when a user signs up for updates from your brand.",
+      splitCondition: "User has purchased a service or product",
       yesCounts: { email: 2, sms: 0 },
       noCounts: { email: 4, sms: 0 }
     },
@@ -567,8 +600,8 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_sms_welcome",
       name: "SMS Welcome",
-      triggerEvent: "When someone opts in to SMS",
-      splitCondition: "Has placed order at least once",
+      triggerEvent: "Triggered when a user opts in to SMS updates.",
+      splitCondition: "User has purchased a service or product",
       yesCounts: { email: 0, sms: 1 },
       noCounts: { email: 0, sms: 3 }
     },
@@ -578,8 +611,8 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_checkout_abandonment",
       name: "Checkout Abandonment",
-      triggerEvent: "When someone starts checkout but does not purchase",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 4, sms: 2 },
       noCounts: { email: 4, sms: 2 }
     },
@@ -589,14 +622,14 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     checkoutAbandonment,
     "full_cart_abandonment",
     "Cart Abandonment",
-    "When someone adds to cart but does not purchase"
+    "Triggered when someone adds to cart but does not purchase."
   );
   const browseAbandonment = createSplitFlow(
     {
       id: "full_browse_abandonment",
       name: "Browse Abandonment",
-      triggerEvent: "When someone browses products but does not add to cart",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone browses products but does not add to cart.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 4, sms: 2 },
       noCounts: { email: 4, sms: 2 }
     },
@@ -606,7 +639,7 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_site_abandonment",
       name: "Site Abandonment",
-      triggerEvent: "When someone visits site and exits without product view",
+      triggerEvent: "Triggered when someone visits site and exits without product view.",
       emailCount: 3,
       smsCount: 0
     },
@@ -616,8 +649,8 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_post_purchase",
       name: "Post-Purchase",
-      triggerEvent: "When someone places an order",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when someone places an order.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 3, sms: 2 },
       noCounts: { email: 3, sms: 1 }
     },
@@ -627,8 +660,8 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_winback",
       name: "Winback",
-      triggerEvent: "When customer is inactive for defined window",
-      splitCondition: "Has purchase history",
+      triggerEvent: "Triggered when customer is inactive for a defined window.",
+      splitCondition: "User has purchase history",
       yesCounts: { email: 3, sms: 0 },
       noCounts: { email: 3, sms: 0 }
     },
@@ -638,7 +671,7 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
     {
       id: "full_sunset",
       name: "Sunset",
-      triggerEvent: "When subscriber remains inactive after winback",
+      triggerEvent: "Triggered when subscriber remains inactive after winback.",
       emailCount: 3,
       smsCount: 0
     },

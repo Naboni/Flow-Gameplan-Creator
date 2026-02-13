@@ -51,10 +51,13 @@ describe("exportFlowToMiro", () => {
       return okResponse({ id: `item_${attempt++}` });
     });
 
+    const trigger = welcomeSeriesFixture.nodes.find((n) => n.id === "trigger_signup")!;
+    const email1 = welcomeSeriesFixture.nodes.find((n) => n.id === "email_1")!;
+    const edge1 = welcomeSeriesFixture.edges.find((e) => e.from === "trigger_signup" && e.to === "email_1")!;
     const tinyFlow = {
       ...welcomeSeriesFixture,
-      nodes: welcomeSeriesFixture.nodes.slice(0, 2),
-      edges: welcomeSeriesFixture.edges.slice(0, 1)
+      nodes: [trigger, email1],
+      edges: [edge1]
     };
 
     const result = await exportFlowToMiro({

@@ -16,11 +16,11 @@ export const EDGE_STYLE = {
 } as const;
 
 export const VIEWER_CHOICES: Array<{ label: string; value: TemplateChoice }> = [
-  { label: "Welcome Series (test case)", value: "welcome-series" },
+  { label: "Welcome Series", value: "welcome-series" },
   { label: "Core Foundation", value: "core-foundation" },
   { label: "Growth Engine", value: "growth-engine" },
   { label: "Full System", value: "full-system" },
-  { label: "Custom (imported)", value: "custom" }
+  { label: "Custom", value: "custom" }
 ];
 
 export const PLAN_OPTIONS: Array<{ label: string; value: PlanKey; desc: string }> = [
