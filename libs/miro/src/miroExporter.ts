@@ -82,36 +82,38 @@ async function requestWithRetry<T>(
   }
 }
 
+type TextAlignVertical = "top" | "middle" | "bottom";
+
 function shapeStyleForNodeType(nodeType: string, specNode?: FlowSpec["nodes"][number]) {
   switch (nodeType) {
     case "trigger":
-      return { shape: "round_rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
     case "split":
-      return { shape: "round_rectangle", fillColor: "#FAF5FF", borderColor: "#8B5CF6", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#FAF5FF", borderColor: "#8B5CF6", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
     case "wait":
-      return { shape: "round_rectangle", fillColor: "#F3F4F6", borderColor: "#9CA3AF", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#F3F4F6", borderColor: "#9CA3AF", textAlign: "center" as const, textAlignVertical: "middle" as TextAlignVertical };
     case "outcome":
-      return { shape: "round_rectangle", fillColor: "#ECFDF5", borderColor: "#10B981", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#ECFDF5", borderColor: "#10B981", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
     case "profileFilter":
-      return { shape: "round_rectangle", fillColor: "#FFFBEB", borderColor: "#F59E0B", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#FFFBEB", borderColor: "#F59E0B", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
     case "note":
-      return { shape: "rectangle", fillColor: "#FFF8F0", borderColor: "#F59E0B", textAlign: "left" as const };
+      return { shape: "rectangle", fillColor: "#FFF8F0", borderColor: "#F59E0B", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
     case "strategy": {
       const branch = specNode && "branchLabel" in specNode ? specNode.branchLabel : "yes";
       if (branch === "no") {
-        return { shape: "rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "left" as const };
+        return { shape: "rectangle", fillColor: "#EFF6FF", borderColor: "#3B82F6", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
       }
-      return { shape: "rectangle", fillColor: "#FFF7ED", borderColor: "#F97316", textAlign: "left" as const };
+      return { shape: "rectangle", fillColor: "#FFF7ED", borderColor: "#F97316", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
     }
     case "message": {
       const channel = specNode && "channel" in specNode ? specNode.channel : "email";
       if (channel === "sms") {
-        return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#EF4444", textAlign: "left" as const };
+        return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#EF4444", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
       }
-      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#22C55E", textAlign: "left" as const };
+      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#22C55E", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
     }
     default:
-      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#CBD5E1", textAlign: "center" as const };
+      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#CBD5E1", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
   }
 }
 
@@ -119,51 +121,59 @@ function nodeContent(specNode: FlowSpec["nodes"][number]): string {
   const title = "title" in specNode ? specNode.title : specNode.type;
 
   if (specNode.type === "wait") {
-    return `<p><strong>Wait ${specNode.duration.value} ${specNode.duration.unit}</strong></p>`;
+    const { value, unit } = specNode.duration;
+    const noun = Math.abs(value) === 1 ? unit.replace(/s$/, "") : unit;
+    return `<p><strong>Wait ${value} ${noun}</strong></p>`;
   }
 
   if (specNode.type === "message") {
-    let sections = `<p><strong>${escapeHtml(title)}</strong></p>`;
+    const pad = "&nbsp;&nbsp;&nbsp;&nbsp;";
+    const channelIcon = specNode.channel === "sms" ? "📱" : "✉";
+    const parts: string[] = [];
+    parts.push(`<p>${pad}<strong>${channelIcon} ${escapeHtml(title)}</strong></p>`);
+    if (specNode.copyHint) {
+      parts.push(`<p>${pad}${escapeHtml(specNode.copyHint)}</p>`);
+    }
     if (specNode.discountCode) {
-      const icon = specNode.discountCode.included ? "[YES]" : "[NO]";
+      const icon = specNode.discountCode.included ? "✓" : "✗";
       const text = specNode.discountCode.included
         ? (specNode.discountCode.description || specNode.discountCode.code || "discount code")
         : "no discount code";
-      sections += `<p>${icon} ${escapeHtml(text)}</p>`;
+      parts.push(`<p>${pad}${icon} ${escapeHtml(text)}</p>`);
     }
     if (specNode.abTest) {
-      sections += `<p><strong>A/B Test:</strong> ${escapeHtml(specNode.abTest.description)}</p>`;
+      parts.push(`<p>${pad}<strong>A/B Test:</strong> ${escapeHtml(specNode.abTest.description)}</p>`);
     }
     if (specNode.messagingFocus) {
-      sections += `<p><strong>Messaging:</strong> ${escapeHtml(specNode.messagingFocus)}</p>`;
+      parts.push(`<p>${pad}<strong>Messaging:</strong> ${escapeHtml(specNode.messagingFocus)}</p>`);
     }
-    return sections;
+    return `<br/>${parts.join("<br/>")}<br/>`;
   }
 
   if (specNode.type === "split") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.condition)}</p>`;
+    return `<p><strong>${escapeHtml(title)}</strong></p><br/><p>${escapeHtml(specNode.condition)}</p>`;
   }
 
   if (specNode.type === "trigger") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.event)}</p>`;
+    return `<p><strong>${escapeHtml(title)}</strong></p><br/><p>${escapeHtml(specNode.event)}</p>`;
   }
 
   if (specNode.type === "profileFilter") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${specNode.filters.map(escapeHtml).join(", ")}</p>`;
+    return `<p><strong>${escapeHtml(title)}</strong></p><br/><p>${specNode.filters.map(escapeHtml).join(", ")}</p>`;
   }
 
   if (specNode.type === "note") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.body)}</p>`;
+    return `<p><strong>${escapeHtml(title)}</strong></p><br/><p>${escapeHtml(specNode.body)}</p>`;
   }
 
   if (specNode.type === "strategy") {
     const primary = escapeHtml(specNode.primaryFocus);
     const secondary = escapeHtml(specNode.secondaryFocus);
-    return `<p><strong>STRATEGY</strong></p><p><strong>PRIMARY FOCUS</strong><br/>${primary}</p><p><strong>SECONDARY FOCUS</strong><br/>${secondary}</p>`;
+    return `<p><strong>STRATEGY</strong></p><br/><p><strong>PRIMARY FOCUS</strong></p><p>${primary}</p><br/><p><strong>SECONDARY FOCUS</strong></p><p>${secondary}</p>`;
   }
 
   if (specNode.type === "outcome") {
-    return `<p><strong>${escapeHtml(title)}</strong><br/>${escapeHtml(specNode.result)}</p>`;
+    return `<p><strong>${escapeHtml(title)}</strong></p><br/><p>${escapeHtml(specNode.result)}</p>`;
   }
 
   return `<p><strong>${escapeHtml(title)}</strong></p>`;
@@ -179,7 +189,12 @@ export async function exportFlowToMiro({
   fetchImpl = fetch,
   maxRetries = 3
 }: ExportFlowToMiroOptions): Promise<ExportFlowToMiroResult> {
-  const layout = buildLayout(flowSpec, { positionOverrides });
+  const layout = buildLayout(flowSpec, {
+    positionOverrides,
+    nodeSizeOverrides: {
+      note: { width: 320, height: 110 }
+    }
+  });
   const nodeById = new Map(flowSpec.nodes.map((node) => [node.id, node]));
   const itemMap: Record<string, string> = {};
 
@@ -205,7 +220,7 @@ export async function exportFlowToMiro({
         fillColor: style.fillColor,
         borderColor: style.borderColor,
         textAlign: style.textAlign,
-        textAlignVertical: "top" as const
+        textAlignVertical: style.textAlignVertical
       },
       position: {
         x: originX + positioned.x + positioned.width / 2,

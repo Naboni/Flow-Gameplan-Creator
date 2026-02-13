@@ -37,9 +37,10 @@ export type LayoutOptions = {
   paddingX?: number;
   paddingY?: number;
   positionOverrides?: Record<string, { x: number; y: number }>;
+  nodeSizeOverrides?: Partial<Record<FlowNode["type"], { width: number; height: number }>>;
 };
 
-const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides"> = {
+const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides" | "nodeSizeOverrides"> = {
   rowSpacing: 220,
   laneSpacing: 200,
   sameLaneOffset: 340,
@@ -292,7 +293,7 @@ export function buildLayout(
       const laneIndex = laneStackCount.get(lane) ?? 0;
       laneStackCount.set(lane, laneIndex + 1);
 
-      const size = NODE_SIZE_MAP[node.type];
+      const size = resolved.nodeSizeOverrides?.[node.type] ?? NODE_SIZE_MAP[node.type];
       // Center-align nodes in their lane so handles (at center) line up vertically
       const laneCenter = lane * resolved.laneSpacing + laneIndex * resolved.sameLaneOffset;
       const rawX = laneCenter - size.width / 2;
@@ -320,7 +321,7 @@ export function buildLayout(
   for (const sideNode of sideNodes) {
     const targetId = sideTargetMap.get(sideNode.id);
     const targetPositioned = targetId ? positionedById.get(targetId) : undefined;
-    const size = NODE_SIZE_MAP[sideNode.type];
+    const size = resolved.nodeSizeOverrides?.[sideNode.type] ?? NODE_SIZE_MAP[sideNode.type];
 
     if (targetPositioned) {
       // Place side nodes on the OUTSIDE of their branch
