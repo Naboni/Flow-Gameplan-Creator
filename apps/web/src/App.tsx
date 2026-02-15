@@ -163,14 +163,25 @@ function AppInner() {
 
   const isEditorActive = tab === "editor";
 
-  /* Auto-position: read-only tabs get measured-height-based Y correction */
+  /* Auto-position: works for ALL canvas tabs (including editor).
+     On first render, adjusts Y positions using actual measured heights.
+     After that, passes all changes through normally (editor drag etc.). */
   const readOnlyNodes = tab === "generate" && activeGenFlow ? genNodes : viewerNodes;
   const readOnlyEdges = tab === "generate" && activeGenFlow ? genEdges : viewerEdges;
-  const isReadOnlyCanvas = !isEditorActive && tab !== "library";
-  const { nodes: autoNodes, onNodesChange: autoNodesChange, didReposition } = useAutoPosition(readOnlyNodes, readOnlyEdges, isReadOnlyCanvas);
+  const baseNodes = isEditorActive ? editorNodes : readOnlyNodes;
+  const baseEdges = isEditorActive ? editorEdges : readOnlyEdges;
+  const isCanvasActive = tab !== "library" && !(tab === "generate" && !activeGenFlow && !genBusy);
 
-  const flowNodes = isEditorActive ? editorNodes : autoNodes;
-  const flowEdges = isEditorActive ? editorEdges : readOnlyEdges;
+  const handleAutoReposition = useCallback((repositioned: Node<AppNodeData>[]) => {
+    if (isEditorActive) setEditorNodes(repositioned);
+  }, [isEditorActive]);
+
+  const { nodes: autoNodes, onNodesChange: autoNodesChange, didReposition } = useAutoPosition(
+    baseNodes, baseEdges, isCanvasActive, handleAutoReposition
+  );
+
+  const flowNodes = autoNodes;
+  const flowEdges = baseEdges;
 
   /* Re-fit view after auto-position correction */
   useEffect(() => {
@@ -200,10 +211,12 @@ function AppInner() {
   /* ── editor handlers ── */
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
+    /* Always forward through the auto-position hook (handles initial
+       measurement for all tabs, then becomes a passthrough). */
+    autoNodesChange(changes);
+    /* For editor, also update the backing state so add/delete/drag persists. */
     if (isEditorActive) {
       setEditorNodes((nds) => applyNodeChanges(changes, nds));
-    } else {
-      autoNodesChange(changes);
     }
   }, [isEditorActive, autoNodesChange]);
 
@@ -260,9 +273,20 @@ function AppInner() {
   }
 
   function openFlowInEditor(spec: FlowSpec) {
-    const nodes = specToRfNodes(spec);
-    setEditorNodes(nodes);
-    setEditorEdges(specToRfEdges(spec, nodes));
+    /* Use current auto-positioned nodes if they match the spec
+       (avoids recomputing from scratch with estimated heights). */
+    const currentIds = new Set(flowNodes.map((n) => n.id));
+    const specIds = new Set(spec.nodes.map((n) => n.id));
+    const match = specIds.size > 0 && [...specIds].every((id) => currentIds.has(id));
+
+    if (match) {
+      setEditorNodes(flowNodes.map((n) => ({ ...n, draggable: undefined })));
+      setEditorEdges([...flowEdges]);
+    } else {
+      const nodes = specToRfNodes(spec);
+      setEditorNodes(nodes);
+      setEditorEdges(specToRfEdges(spec, nodes));
+    }
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setTab("editor");
@@ -416,7 +440,10 @@ function AppInner() {
     setBusyMiroExport(true);
     try {
       const spec = getExportSpec();
-      const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: spec.ui?.nodePositions ?? {} });
+      /* Use current auto-positioned node positions so Miro matches the canvas */
+      const posOverrides: Record<string, { x: number; y: number }> = {};
+      for (const n of flowNodes) posOverrides[n.id] = n.position;
+      const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: posOverrides });
       setNotice(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
     } catch (error) {
       console.error("Miro export error:", error);

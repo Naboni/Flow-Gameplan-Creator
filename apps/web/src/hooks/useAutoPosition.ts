@@ -12,11 +12,19 @@ const END_EXTRA_MULTIPLIER = 0.75;
  * Pass 2: after React Flow measures actual node heights, Y positions are
  *          recomputed so that the gap between every parent's bottom edge
  *          and the next node's top edge is a fixed constant.
+ *
+ * After the initial adjustment, ALL subsequent changes (drag, selection,
+ * dimension re-measurements) pass through normally — so the editor's
+ * drag-and-drop continues to work without interference.
+ *
+ * @param onReposition  called once after the Y-correction is applied,
+ *                      so the caller can sync external state (e.g. editorNodes).
  */
 export function useAutoPosition(
   layoutNodes: Node<AppNodeData>[],
   layoutEdges: Edge[],
-  enabled: boolean
+  enabled: boolean,
+  onReposition?: (nodes: Node<AppNodeData>[]) => void
 ) {
   const [nodes, setNodes] = useState(layoutNodes);
   const measuredRef = useRef(new Map<string, number>());
@@ -28,6 +36,8 @@ export function useAutoPosition(
   edgesRef.current = layoutEdges;
   const layoutRef = useRef(layoutNodes);
   layoutRef.current = layoutNodes;
+  const onRepositionRef = useRef(onReposition);
+  onRepositionRef.current = onReposition;
 
   /* Reset when the set of nodes changes (different flow / tab) */
   const inputKey = layoutNodes.map((n) => n.id).join(",");
@@ -45,6 +55,14 @@ export function useAutoPosition(
     (changes: NodeChange[]) => {
       if (!enabled) return;
 
+      /* After the initial correction, pass ALL changes through normally.
+         This lets editor drag / selection / dimension updates work. */
+      if (adjustedRef.current) {
+        setNodes((nds) => applyNodeChanges(changes, nds));
+        return;
+      }
+
+      /* ── Pre-adjustment phase: capture dimensions ── */
       let hasDim = false;
       for (const c of changes) {
         if (c.type === "dimensions" && c.dimensions && c.dimensions.height > 0) {
@@ -53,18 +71,19 @@ export function useAutoPosition(
         }
       }
 
-      if (hasDim && !adjustedRef.current) {
+      if (hasDim) {
         const initNodes = layoutRef.current;
         const allMeasured = initNodes.every((n) => measuredRef.current.has(n.id));
         if (allMeasured) {
           const adjusted = recomputePositions(initNodes, edgesRef.current, measuredRef.current);
           setNodes(adjusted);
           adjustedRef.current = true;
+          onRepositionRef.current?.(adjusted);
           return;
         }
       }
 
-      /* Always apply non-dimension changes (selection, etc.) */
+      /* Apply non-dimension changes while waiting for all measurements */
       const other = changes.filter((c) => c.type !== "dimensions");
       if (other.length > 0) {
         setNodes((nds) => applyNodeChanges(other, nds));
