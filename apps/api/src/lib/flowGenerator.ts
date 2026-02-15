@@ -12,6 +12,10 @@ type StepContent = {
   discountCode?: { included: boolean; code?: string; description?: string };
   abTest?: { description: string };
   messagingFocus?: string;
+  smartSending?: boolean;
+  utmLinks?: boolean;
+  filterConditions?: string;
+  implementationNotes?: string;
 };
 
 type NoteContent = {
@@ -50,7 +54,7 @@ type FlowNode =
   | { id: string; type: "profileFilter"; title: string; filters: string[] }
   | { id: string; type: "split"; title: string; condition: string; labels: { yes: string; no: string } }
   | { id: string; type: "wait"; duration: { value: number; unit: "minutes" | "hours" | "days" } }
-  | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string; discountCode?: { included: boolean; code?: string; description?: string }; abTest?: { description: string }; messagingFocus?: string }
+  | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string; discountCode?: { included: boolean; code?: string; description?: string }; abTest?: { description: string }; messagingFocus?: string; smartSending?: boolean; utmLinks?: boolean; filterConditions?: string; implementationNotes?: string; strategy?: { primaryFocus: string; secondaryFocus: string } }
   | { id: string; type: "outcome"; title: string; result: string }
   | { id: string; type: "note"; title: string; body: string }
   | { id: string; type: "strategy"; title: string; primaryFocus: string; secondaryFocus: string; branchLabel?: "yes" | "no" };
@@ -128,9 +132,13 @@ INSTRUCTIONS:
    - "discountCode": { "included": true/false, "description": "short generic note like 'Include a discount code to drive urgency'" (if included) }. Decide strategically which steps should offer discounts — typically later in the flow to create urgency, not in the first touch. Do NOT invent actual discount codes — just indicate whether this step should include one and describe the purpose.
    - "abTest": { "description": "what is being A/B tested" } — only include this for steps where A/B testing adds strategic value (e.g., testing subject lines, formats, approaches). Not every step needs one.
    - "messagingFocus": a short label describing the messaging strategy of that step (e.g., "Cart Reminders, Familiarity & Trust", "Social Proof + First-Time Discount", "Final Urgency, Stock & Scarcity").
+   - "smartSending": boolean — recommend false (OFF) for most messages, true (ON) for re-engagement or high-frequency sends.
+   - "utmLinks": boolean — recommend true (YES) for all marketing messages.
+   - "filterConditions": string describing any profile filters for this step (e.g., "Exclude VIP customers", "Only send to engaged subscribers"). Use "NA" if none.
+   - "implementationNotes": string with brief implementation hints or special notes for the strategist (e.g., "Use dynamic product block", "Include loyalty points balance").
 3. Tailor all content to the brand's voice, products, and audience.
 4. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
-5. Provide OBJECTIVE/FOCUS notes for steps that have a specific strategic purpose worth calling out — for example: the first touchpoint that sets the tone, a message that introduces a discount or offer, a re-engagement attempt, or a key conversion email. Typically 1-2 notes per branch is right. Each note should reference which step number it's about (1-indexed). Return an empty array only if every step is straightforward with nothing worth highlighting.
+5. Always return "notes" as an empty array []. Objective/focus information should be captured in the "implementationNotes" field of each step instead.
 6. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
 7. ${blueprint.hasSplit
     ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
@@ -143,8 +151,8 @@ Return ONLY valid JSON matching this exact schema:
   "flowName": "string",
   "triggerDescription": "string (tailored trigger description)",
   "splitConditionTailored": "string or null",
-  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": false }, "abTest": { "description": "string" } | null, "messagingFocus": "string" }],
-  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": true, "description": "Include a discount to drive urgency" }, "abTest": null, "messagingFocus": "string" }],
+  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": false }, "abTest": { "description": "string" } | null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string" }],
+  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": true, "description": "Include a discount to drive urgency" }, "abTest": null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string" }],
   "notes": [{ "title": "OBJECTIVE/FOCUS:", "body": "string", "attachToStep": number }],
   "waitDurations": [{ "value": number, "unit": "hours|days" }],
   "yesStrategy": { "primaryFocus": "string", "secondaryFocus": "string" },
@@ -203,7 +211,7 @@ function assembleFlowSpec(
       }
 
       const stepId = `${blueprint.flowId}_step_${i + 1}`;
-      nodes.push({
+      const msgNode: FlowNode = {
         id: stepId,
         type: "message",
         channel: steps[i].channel,
@@ -211,8 +219,14 @@ function assembleFlowSpec(
         copyHint: steps[i].copyHint,
         ...(steps[i].discountCode ? { discountCode: steps[i].discountCode } : {}),
         ...(steps[i].abTest ? { abTest: steps[i].abTest } : {}),
-        ...(steps[i].messagingFocus ? { messagingFocus: steps[i].messagingFocus } : {})
-      });
+        ...(steps[i].messagingFocus ? { messagingFocus: steps[i].messagingFocus } : {}),
+        ...(steps[i].smartSending != null ? { smartSending: steps[i].smartSending } : {}),
+        ...(steps[i].utmLinks != null ? { utmLinks: steps[i].utmLinks } : {}),
+        ...(steps[i].filterConditions ? { filterConditions: steps[i].filterConditions } : {}),
+        ...(steps[i].implementationNotes ? { implementationNotes: steps[i].implementationNotes } : {}),
+        ...(i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
+      };
+      nodes.push(msgNode);
       edges.push({ id: nextEdgeId(), from: prevId, to: stepId });
       prevId = stepId;
     }
@@ -248,16 +262,23 @@ function assembleFlowSpec(
         prevYes = waitId;
       }
       const stepId = `${blueprint.flowId}_yes_${i + 1}`;
-      nodes.push({
+      const step = content.yesSteps[i];
+      const yesMsg: FlowNode = {
         id: stepId,
         type: "message",
-        channel: content.yesSteps[i].channel,
-        title: content.yesSteps[i].title,
-        copyHint: content.yesSteps[i].copyHint,
-        ...(content.yesSteps[i].discountCode ? { discountCode: content.yesSteps[i].discountCode } : {}),
-        ...(content.yesSteps[i].abTest ? { abTest: content.yesSteps[i].abTest } : {}),
-        ...(content.yesSteps[i].messagingFocus ? { messagingFocus: content.yesSteps[i].messagingFocus } : {})
-      });
+        channel: step.channel,
+        title: step.title,
+        copyHint: step.copyHint,
+        ...(step.discountCode ? { discountCode: step.discountCode } : {}),
+        ...(step.abTest ? { abTest: step.abTest } : {}),
+        ...(step.messagingFocus ? { messagingFocus: step.messagingFocus } : {}),
+        ...(step.smartSending != null ? { smartSending: step.smartSending } : {}),
+        ...(step.utmLinks != null ? { utmLinks: step.utmLinks } : {}),
+        ...(step.filterConditions ? { filterConditions: step.filterConditions } : {}),
+        ...(step.implementationNotes ? { implementationNotes: step.implementationNotes } : {}),
+        ...(i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
+      };
+      nodes.push(yesMsg);
       edges.push({
         id: nextEdgeId(),
         from: prevYes,
@@ -284,16 +305,23 @@ function assembleFlowSpec(
         prevNo = waitId;
       }
       const stepId = `${blueprint.flowId}_no_${i + 1}`;
-      nodes.push({
+      const noStep = content.noSteps[i];
+      const noMsg: FlowNode = {
         id: stepId,
         type: "message",
-        channel: content.noSteps[i].channel,
-        title: content.noSteps[i].title,
-        copyHint: content.noSteps[i].copyHint,
-        ...(content.noSteps[i].discountCode ? { discountCode: content.noSteps[i].discountCode } : {}),
-        ...(content.noSteps[i].abTest ? { abTest: content.noSteps[i].abTest } : {}),
-        ...(content.noSteps[i].messagingFocus ? { messagingFocus: content.noSteps[i].messagingFocus } : {})
-      });
+        channel: noStep.channel,
+        title: noStep.title,
+        copyHint: noStep.copyHint,
+        ...(noStep.discountCode ? { discountCode: noStep.discountCode } : {}),
+        ...(noStep.abTest ? { abTest: noStep.abTest } : {}),
+        ...(noStep.messagingFocus ? { messagingFocus: noStep.messagingFocus } : {}),
+        ...(noStep.smartSending != null ? { smartSending: noStep.smartSending } : {}),
+        ...(noStep.utmLinks != null ? { utmLinks: noStep.utmLinks } : {}),
+        ...(noStep.filterConditions ? { filterConditions: noStep.filterConditions } : {}),
+        ...(noStep.implementationNotes ? { implementationNotes: noStep.implementationNotes } : {}),
+        ...(i === 0 && content.noStrategy ? { strategy: content.noStrategy } : {})
+      };
+      nodes.push(noMsg);
       edges.push({
         id: nextEdgeId(),
         from: prevNo,
@@ -305,93 +333,6 @@ function assembleFlowSpec(
     const noOutcome = `${blueprint.flowId}_no_outcome`;
     nodes.push({ id: noOutcome, type: "outcome", title: "No Path Complete", result: "Non-purchaser path completed" });
     edges.push({ id: nextEdgeId(), from: prevNo, to: noOutcome });
-  }
-
-  // Collect message step IDs
-  const messageStepIds = nodes
-    .filter((n) => n.type === "message")
-    .map((n) => n.id);
-
-  // Determine which messages will have strategy cards (to avoid note overlap)
-  const strategyTargetIds = new Set<string>();
-  if (blueprint.hasSplit && blueprint.splitSegments) {
-    if (content.yesStrategy) {
-      const id = `${blueprint.flowId}_yes_1`;
-      if (messageStepIds.includes(id)) strategyTargetIds.add(id);
-    }
-    if (content.noStrategy) {
-      const id = `${blueprint.flowId}_no_1`;
-      if (messageStepIds.includes(id)) strategyTargetIds.add(id);
-    }
-  } else if (content.yesStrategy && messageStepIds.length > 0) {
-    strategyTargetIds.add(messageStepIds[0]);
-  }
-
-  // Connect notes to messages — prefer those without a strategy, fall back to all messages
-  const noteTargetIds = messageStepIds.filter((id) => !strategyTargetIds.has(id));
-  const fallbackTargetIds = noteTargetIds.length > 0 ? noteTargetIds : messageStepIds;
-
-  for (let i = 0; i < content.notes.length; i++) {
-    if (fallbackTargetIds.length === 0) break;
-    const noteId = `${blueprint.flowId}_note_${i + 1}`;
-    const targetStepId = fallbackTargetIds[i % fallbackTargetIds.length];
-    nodes.push({
-      id: noteId,
-      type: "note",
-      title: content.notes[i].title,
-      body: content.notes[i].body
-    });
-    edges.push({ id: nextEdgeId(), from: noteId, to: targetStepId });
-  }
-
-  // Add strategy nodes per branch (connected to the first message of each branch)
-  if (blueprint.hasSplit && blueprint.splitSegments) {
-    // YES branch strategy → first yes message
-    if (content.yesStrategy) {
-      const yesStratId = `${blueprint.flowId}_strategy_yes`;
-      const firstYesMsg = nodes.find((n) => n.id === `${blueprint.flowId}_yes_1`);
-      nodes.push({
-        id: yesStratId,
-        type: "strategy",
-        title: "STRATEGY",
-        primaryFocus: content.yesStrategy.primaryFocus,
-        secondaryFocus: content.yesStrategy.secondaryFocus,
-        branchLabel: "yes"
-      });
-      if (firstYesMsg) {
-        edges.push({ id: nextEdgeId(), from: yesStratId, to: firstYesMsg.id });
-      }
-    }
-    // NO branch strategy → first no message
-    if (content.noStrategy) {
-      const noStratId = `${blueprint.flowId}_strategy_no`;
-      const firstNoMsg = nodes.find((n) => n.id === `${blueprint.flowId}_no_1`);
-      nodes.push({
-        id: noStratId,
-        type: "strategy",
-        title: "STRATEGY",
-        primaryFocus: content.noStrategy.primaryFocus,
-        secondaryFocus: content.noStrategy.secondaryFocus,
-        branchLabel: "no"
-      });
-      if (firstNoMsg) {
-        edges.push({ id: nextEdgeId(), from: noStratId, to: firstNoMsg.id });
-      }
-    }
-  } else if (content.yesStrategy) {
-    // Linear flow: single strategy connected to the first message
-    const stratId = `${blueprint.flowId}_strategy`;
-    const firstMsg = nodes.find((n) => n.type === "message");
-    nodes.push({
-      id: stratId,
-      type: "strategy",
-      title: "STRATEGY",
-      primaryFocus: content.yesStrategy.primaryFocus,
-      secondaryFocus: content.yesStrategy.secondaryFocus
-    });
-    if (firstMsg) {
-      edges.push({ id: nextEdgeId(), from: stratId, to: firstMsg.id });
-    }
   }
 
   return {
@@ -474,24 +415,24 @@ function buildFallbackContent(
   if (blueprint.hasSplit && blueprint.splitSegments) {
     const yes = blueprint.splitSegments.yes;
     for (let i = 0; i < yes.email; i++) {
-      yesSteps.push({ title: `Email ${i + 1} (Yes)`, channel: "email", copyHint: `Email for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Brand Engagement" });
+      yesSteps.push({ title: `Email ${i + 1} (Yes)`, channel: "email", copyHint: `Email for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Brand Engagement", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard email template" });
     }
     for (let i = 0; i < yes.sms; i++) {
-      yesSteps.push({ title: `SMS ${i + 1} (Yes)`, channel: "sms", copyHint: `SMS for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
+      yesSteps.push({ title: `SMS ${i + 1} (Yes)`, channel: "sms", copyHint: `SMS for ${brand.brandName} yes-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard SMS template" });
     }
     const no = blueprint.splitSegments.no;
     for (let i = 0; i < no.email; i++) {
-      noSteps.push({ title: `Email ${i + 1} (No)`, channel: "email", copyHint: `Email for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Trust Building" });
+      noSteps.push({ title: `Email ${i + 1} (No)`, channel: "email", copyHint: `Email for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Trust Building", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard email template" });
     }
     for (let i = 0; i < no.sms; i++) {
-      noSteps.push({ title: `SMS ${i + 1} (No)`, channel: "sms", copyHint: `SMS for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
+      noSteps.push({ title: `SMS ${i + 1} (No)`, channel: "sms", copyHint: `SMS for ${brand.brandName} no-branch customers`, discountCode: { included: false }, messagingFocus: "Quick Reminder", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard SMS template" });
     }
   } else {
     for (let i = 0; i < blueprint.emailCount; i++) {
-      yesSteps.push({ title: `Email ${i + 1}`, channel: "email", copyHint: `Email for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Brand Engagement" });
+      yesSteps.push({ title: `Email ${i + 1}`, channel: "email", copyHint: `Email for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Brand Engagement", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard email template" });
     }
     for (let i = 0; i < blueprint.smsCount; i++) {
-      yesSteps.push({ title: `SMS ${i + 1}`, channel: "sms", copyHint: `SMS for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Quick Reminder" });
+      yesSteps.push({ title: `SMS ${i + 1}`, channel: "sms", copyHint: `SMS for ${brand.brandName}`, discountCode: { included: false }, messagingFocus: "Quick Reminder", smartSending: false, utmLinks: true, filterConditions: "NA", implementationNotes: "Standard SMS template" });
     }
   }
 

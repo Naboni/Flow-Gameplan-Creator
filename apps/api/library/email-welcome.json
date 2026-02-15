@@ -82,5 +82,29 @@
     "isDefault": false,
     "createdAt": "2026-02-12T15:22:36.843Z",
     "updatedAt": "2026-02-12T17:03:49.247Z"
+  },
+  {
+    "id": "email-welcome_1771134982337",
+    "flowType": "email-welcome",
+    "name": "Test Email",
+    "description": "Test Email Zach",
+    "triggerEvent": "Sign up",
+    "emailCount": 4,
+    "smsCount": 4,
+    "hasSplit": true,
+    "splitCondition": "Has placed order (purchaser vs non-purchaser)",
+    "splitSegments": {
+      "yes": {
+        "email": 2,
+        "sms": 2
+      },
+      "no": {
+        "email": 2,
+        "sms": 2
+      }
+    },
+    "isDefault": false,
+    "createdAt": "2026-02-15T05:56:22.339Z",
+    "updatedAt": "2026-02-15T05:56:22.339Z"
   }
 ]

@@ -36,6 +36,75 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
     );
   }
 
+  if (fn.type === "message") {
+    const isEmail = fn.channel === "email";
+    const channelClass = isEmail ? "email" : "sms";
+    return (
+      <div className={`flow-msg flow-msg--${channelClass} ${fn.strategy ? "flow-msg--with-strategy" : ""} ${selected ? "flow-msg--selected" : ""}`}>
+        <Handle type="target" position={Position.Top} className="flow-handle" />
+        <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
+        <Handle type="target" position={Position.Right} id="right" className="flow-handle" />
+
+        <div className="flow-msg__header">{data.title}</div>
+
+        <div className="flow-msg__body">
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">Message Type:</span>
+            <span className="flow-msg__field-value">{isEmail ? "Email" : "SMS"}</span>
+          </div>
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">AB Test:</span>
+            <span className="flow-msg__field-value">{fn.abTest?.description || "..."}</span>
+          </div>
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">Smart Sending:</span>
+            <span className="flow-msg__field-value">{fn.smartSending ? "ON" : "OFF"}</span>
+          </div>
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">UTM Links:</span>
+            <span className="flow-msg__field-value">{fn.utmLinks !== false ? "YES" : "NO"}</span>
+          </div>
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">Discount:</span>
+            {fn.discountCode?.included ? (
+              <span className="flow-msg__field-value">
+                <span className="flow-msg__discount-check">{"✓ "}</span>
+                {fn.discountCode.code && <span className="flow-msg__discount-code">{fn.discountCode.code}</span>}
+                {fn.discountCode.description && (
+                  <div className="flow-msg__discount-desc">*{fn.discountCode.description}</div>
+                )}
+              </span>
+            ) : (
+              <span className="flow-msg__field-value">No</span>
+            )}
+          </div>
+          <div className="flow-msg__field">
+            <span className="flow-msg__field-label">Filter conditions:</span>
+            <span className="flow-msg__field-value">{fn.filterConditions || "NA"}</span>
+          </div>
+          <div className="flow-msg__field flow-msg__field--block">
+            <span className="flow-msg__field-label">Implementation Notes: </span>
+            <span className="flow-msg__field-value">{fn.implementationNotes || "..."}</span>
+          </div>
+        </div>
+
+        {fn.strategy && (
+          <>
+            <div className="flow-msg__strategy-header">Strategy</div>
+            <div className="flow-msg__strategy-body">
+              <div className="flow-msg__focus-label">PRIMARY FOCUS</div>
+              <p className="flow-msg__focus-text">{fn.strategy.primaryFocus}</p>
+              <div className="flow-msg__focus-label">SECONDARY FOCUS</div>
+              <p className="flow-msg__focus-text">{fn.strategy.secondaryFocus}</p>
+            </div>
+          </>
+        )}
+
+        <Handle type="source" position={Position.Bottom} className="flow-handle" />
+      </div>
+    );
+  }
+
   if (fn.type === "wait") {
     return (
       <div className={`flow-card flow-card--wait ${selected ? "flow-card--selected" : ""}`}>
@@ -58,18 +127,13 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
     );
   }
 
-  const typeKey = fn.type === "message" ? fn.channel
-    : fn.type === "profileFilter" ? "filter"
-    : fn.type;
+  const typeKey = fn.type === "profileFilter" ? "filter" : fn.type;
 
-  const icon = fn.type === "message"
-    ? (fn.channel === "sms" ? NodeIcons.sms : NodeIcons.email)
-    : fn.type === "profileFilter" ? NodeIcons.filter
+  const icon = fn.type === "profileFilter" ? NodeIcons.filter
     : NodeIcons[fn.type as keyof typeof NodeIcons];
 
   let subtitle = "";
   if (fn.type === "trigger") subtitle = fn.event;
-  else if (fn.type === "message") subtitle = fn.copyHint || "";
   else if (fn.type === "split") subtitle = fn.condition;
   else if (fn.type === "profileFilter") subtitle = fn.filters.join(", ");
 
@@ -83,33 +147,6 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
         <div className="flow-card__title">{data.title}</div>
       </div>
       {subtitle && <div className="flow-card__subtitle">{subtitle}</div>}
-      {fn.type === "message" && (
-        <div className="flow-card__sections">
-          {/* discount code row */}
-          <div className={`flow-card__row ${fn.discountCode?.included ? "flow-card__row--yes" : "flow-card__row--no"}`}>
-            <span className="flow-card__row-icon">{fn.discountCode?.included ? "✓" : "✗"}</span>
-            <span className="flow-card__row-text">
-              {fn.discountCode?.included
-                ? fn.discountCode.description || fn.discountCode.code || "discount code"
-                : "no discount code"}
-            </span>
-          </div>
-          {/* A/B test row */}
-          {fn.abTest && (
-            <div className="flow-card__row flow-card__row--neutral">
-              <span className="flow-card__row-label">A/B Test:</span>
-              <span className="flow-card__row-text">{fn.abTest.description}</span>
-            </div>
-          )}
-          {/* messaging focus row */}
-          {fn.messagingFocus && (
-            <div className="flow-card__row flow-card__row--neutral">
-              <span className="flow-card__row-label">Messaging:</span>
-              <span className="flow-card__row-text">{fn.messagingFocus}</span>
-            </div>
-          )}
-        </div>
-      )}
       <Handle type="source" position={Position.Bottom} className="flow-handle" />
     </div>
   );

@@ -108,9 +108,9 @@ function shapeStyleForNodeType(nodeType: string, specNode?: FlowSpec["nodes"][nu
     case "message": {
       const channel = specNode && "channel" in specNode ? specNode.channel : "email";
       if (channel === "sms") {
-        return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#EF4444", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
+        return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#4CAF50", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
       }
-      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#22C55E", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
+      return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#6495ED", textAlign: "left" as const, textAlignVertical: "top" as TextAlignVertical };
     }
     default:
       return { shape: "round_rectangle", fillColor: "#FFFFFF", borderColor: "#CBD5E1", textAlign: "center" as const, textAlignVertical: "top" as TextAlignVertical };
@@ -127,27 +127,31 @@ function nodeContent(specNode: FlowSpec["nodes"][number]): string {
   }
 
   if (specNode.type === "message") {
-    const pad = "&nbsp;&nbsp;&nbsp;&nbsp;";
-    const channelIcon = specNode.channel === "sms" ? "📱" : "✉";
+    const pad = "&nbsp;&nbsp;";
+    const isEmail = specNode.channel === "email";
     const parts: string[] = [];
-    parts.push(`<p>${pad}<strong>${channelIcon} ${escapeHtml(title)}</strong></p>`);
-    if (specNode.copyHint) {
-      parts.push(`<p>${pad}${escapeHtml(specNode.copyHint)}</p>`);
+    parts.push(`<p><strong>${escapeHtml(title)}</strong></p>`);
+    parts.push(`<p>${pad}<strong>Message Type:</strong> ${isEmail ? "Email" : "SMS"}</p>`);
+    parts.push(`<p>${pad}<strong>AB Test:</strong> ${specNode.abTest ? escapeHtml(specNode.abTest.description) : "..."}</p>`);
+    parts.push(`<p>${pad}<strong>Smart Sending:</strong> ${specNode.smartSending ? "ON" : "OFF"}</p>`);
+    parts.push(`<p>${pad}<strong>UTM Links:</strong> ${specNode.utmLinks !== false ? "YES" : "NO"}</p>`);
+    if (specNode.discountCode?.included) {
+      const discText = specNode.discountCode.code
+        ? `[YES] ${escapeHtml(specNode.discountCode.code)}`
+        : "[YES]";
+      const desc = specNode.discountCode.description ? ` - ${escapeHtml(specNode.discountCode.description)}` : "";
+      parts.push(`<p>${pad}<strong>Discount:</strong> ${discText}${desc}</p>`);
+    } else {
+      parts.push(`<p>${pad}<strong>Discount:</strong> No</p>`);
     }
-    if (specNode.discountCode) {
-      const icon = specNode.discountCode.included ? "✓" : "✗";
-      const text = specNode.discountCode.included
-        ? (specNode.discountCode.description || specNode.discountCode.code || "discount code")
-        : "no discount code";
-      parts.push(`<p>${pad}${icon} ${escapeHtml(text)}</p>`);
+    parts.push(`<p>${pad}<strong>Filter conditions:</strong> ${escapeHtml(specNode.filterConditions || "NA")}</p>`);
+    parts.push(`<p>${pad}<strong>Implementation Notes:</strong> ${escapeHtml(specNode.implementationNotes || "...")}</p>`);
+    if (specNode.strategy) {
+      parts.push(`<br/><p><strong>STRATEGY</strong></p>`);
+      parts.push(`<p><strong>PRIMARY FOCUS</strong></p><p>${escapeHtml(specNode.strategy.primaryFocus)}</p>`);
+      parts.push(`<p><strong>SECONDARY FOCUS</strong></p><p>${escapeHtml(specNode.strategy.secondaryFocus)}</p>`);
     }
-    if (specNode.abTest) {
-      parts.push(`<p>${pad}<strong>A/B Test:</strong> ${escapeHtml(specNode.abTest.description)}</p>`);
-    }
-    if (specNode.messagingFocus) {
-      parts.push(`<p>${pad}<strong>Messaging:</strong> ${escapeHtml(specNode.messagingFocus)}</p>`);
-    }
-    return `<br/>${parts.join("<br/>")}<br/>`;
+    return parts.join("<br/>");
   }
 
   if (specNode.type === "split") {

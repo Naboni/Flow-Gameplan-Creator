@@ -12,7 +12,6 @@
   border-radius: 12px;
   padding: 12px 14px;
   width: 100%;
-  min-height: 185px;
   box-sizing: border-box;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
   cursor: grab;
@@ -140,45 +139,128 @@
 .flow-badge--email { background: #f0fdf4; color: #16a34a; }
 .flow-badge--sms { background: #fef2f2; color: #dc2626; }
 
-/* ── message card sections ── */
+/* ── message card (blue = email, green = SMS) ── */
 
-.flow-card__sections {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 10px;
+.flow-msg {
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100%;
+  min-height: 230px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  cursor: grab;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.flow-card__row {
+.flow-msg--with-strategy {
+  min-height: 430px;
+}
+
+.flow-msg:active { cursor: grabbing; }
+
+.flow-msg--email { border-color: #6495ED; }
+.flow-msg--sms   { border-color: #4CAF50; }
+
+.flow-msg--selected.flow-msg--email {
+  box-shadow: 0 0 0 2px rgba(100, 149, 237, 0.25), 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.flow-msg--selected.flow-msg--sms {
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.25), 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.flow-msg__header {
+  padding: 11px 14px;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.flow-msg--email .flow-msg__header { background: #6495ED; }
+.flow-msg--sms   .flow-msg__header { background: #4CAF50; }
+
+.flow-msg__body {
+  padding: 10px 14px;
+}
+
+.flow-msg__field {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
   font-size: 11.5px;
-  line-height: 1.45;
+  line-height: 1.5;
+  margin-bottom: 4px;
 }
 
-.flow-card__row-icon {
-  flex-shrink: 0;
-  font-weight: 700;
-  font-size: 13px;
-  width: 16px;
-  text-align: center;
-}
+.flow-msg__field:last-child { margin-bottom: 0; }
 
-.flow-card__row--yes .flow-card__row-icon { color: #16a34a; }
-.flow-card__row--no .flow-card__row-icon { color: #dc2626; }
-
-.flow-card__row-label {
+.flow-msg__field-label {
   font-weight: 700;
-  color: #334155;
+  color: #1e293b;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.flow-card__row-text {
+.flow-msg__field-value {
   color: #475569;
 }
+
+.flow-msg__field--block {
+  display: block;
+}
+
+.flow-msg__discount-check {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.flow-msg__discount-code {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.flow-msg__discount-desc {
+  font-style: italic;
+  font-size: 10.5px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* Strategy section embedded in message card */
+.flow-msg__strategy-header {
+  padding: 7px 14px;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+.flow-msg--email .flow-msg__strategy-header { background: #6495ED; }
+.flow-msg--sms   .flow-msg__strategy-header { background: #4CAF50; }
+
+.flow-msg__strategy-body {
+  padding: 10px 14px;
+}
+
+.flow-msg__focus-label {
+  font-weight: 700;
+  font-size: 11px;
+  color: #1e293b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.flow-msg__focus-text {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #475569;
+  margin: 0 0 8px 0;
+}
+
+.flow-msg__focus-text:last-child { margin-bottom: 0; }
 
 /* ── note card ── */
 

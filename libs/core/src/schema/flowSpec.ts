@@ -86,6 +86,11 @@ const abTestSchema = z.object({
   description: z.string().min(1)
 });
 
+const strategySchema = z.object({
+  primaryFocus: z.string().min(1),
+  secondaryFocus: z.string().min(1)
+});
+
 const messageNodeSchema = z.object({
   id: nodeIdSchema,
   type: z.literal("message"),
@@ -97,7 +102,12 @@ const messageNodeSchema = z.object({
   tags: z.array(z.string().min(1)).optional(),
   discountCode: discountCodeSchema.optional(),
   abTest: abTestSchema.optional(),
-  messagingFocus: z.string().optional()
+  messagingFocus: z.string().optional(),
+  smartSending: z.boolean().optional(),
+  utmLinks: z.boolean().optional(),
+  filterConditions: z.string().optional(),
+  implementationNotes: z.string().optional(),
+  strategy: strategySchema.optional()
 });
 
 const outcomeNodeSchema = z.object({

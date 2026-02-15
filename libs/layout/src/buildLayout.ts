@@ -53,11 +53,24 @@ const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }>
   profileFilter: { width: 280, height: 100 },
   split: { width: 280, height: 100 },
   wait: { width: 280, height: 48 },
-  message: { width: 280, height: 185 },
+  message: { width: 280, height: 230 },
   outcome: { width: 72, height: 22 },
   note: { width: 320, height: 160 },
   strategy: { width: 320, height: 200 }
 };
+
+const MSG_STRATEGY_EXTRA = 200;
+
+function getNodeSize(
+  node: FlowNode,
+  overrides?: Partial<Record<FlowNode["type"], { width: number; height: number }>>
+): { width: number; height: number } {
+  const base = overrides?.[node.type] ?? NODE_SIZE_MAP[node.type];
+  if (node.type === "message" && node.strategy) {
+    return { width: base.width, height: base.height + MSG_STRATEGY_EXTRA };
+  }
+  return base;
+}
 
 function labelSortScore(label?: string): number {
   const normalized = label?.trim().toLowerCase();
@@ -264,75 +277,58 @@ export function buildLayout(
     laneById.set(nodeId, Math.round(average));
   }
 
-  /* ── Position main nodes ── */
-  const nodesByDepth = new Map<number, FlowNode[]>();
-  for (const node of mainNodes) {
-    const depth = depthById.get(node.id) ?? 0;
-    const existing = nodesByDepth.get(depth) ?? [];
-    existing.push(node);
-    nodesByDepth.set(depth, existing);
+  /* ── Position main nodes (per-node Y based on parent chain) ── */
+  const parentEdgesMap = new Map<string, FlowEdge[]>();
+  for (const edge of mainEdges) {
+    const existing = parentEdgesMap.get(edge.to) ?? [];
+    existing.push(edge);
+    parentEdgesMap.set(edge.to, existing);
   }
 
-  const depthEntries = [...nodesByDepth.entries()].sort((a, b) => a[0] - b[0]);
-  const depthY = new Map<number, number>();
-  let currentY = 0;
-  for (const [depth, depthNodes] of depthEntries) {
-    depthY.set(depth, currentY);
-    let maxHeightForDepth = 0;
-    for (const node of depthNodes) {
-      const size = resolved.nodeSizeOverrides?.[node.type] ?? NODE_SIZE_MAP[node.type];
-      if (size.height > maxHeightForDepth) {
-        maxHeightForDepth = size.height;
+  const nodeYMap = new Map<string, number>();
+  for (const node of topoOrder) {
+    const incoming = parentEdgesMap.get(node.id) ?? [];
+    if (incoming.length === 0) {
+      nodeYMap.set(node.id, 0);
+    } else {
+      let maxY = 0;
+      for (const edge of incoming) {
+        const parent = nodesById.get(edge.from);
+        if (!parent) continue;
+        const parentY = nodeYMap.get(edge.from) ?? 0;
+        const parentSize = getNodeSize(parent, resolved.nodeSizeOverrides);
+        const gap = parent.type === "split"
+          ? resolved.rowSpacing * 2.25
+          : resolved.rowSpacing;
+        const candidateY = parentY + parentSize.height + gap;
+        if (candidateY > maxY) maxY = candidateY;
       }
+      nodeYMap.set(node.id, maxY);
     }
-    // Extra vertical space after split rows for Klaviyo-style long drop before branching
-    const hasSplit = depthNodes.some((n) => n.type === "split");
-    const gap = hasSplit ? resolved.rowSpacing * 2.25 : resolved.rowSpacing;
-    currentY += maxHeightForDepth + gap;
   }
 
   const positionedNodes: PositionedNode[] = [];
-  for (const [depth, depthNodes] of depthEntries) {
-    const laneStackCount = new Map<number, number>();
-    const sortedNodes = [...depthNodes].sort((a, b) => {
-      const laneDiff = (laneById.get(a.id) ?? 0) - (laneById.get(b.id) ?? 0);
-      if (laneDiff !== 0) {
-        return laneDiff;
-      }
-      const typeDiff = nodeSortPriority(a.type) - nodeSortPriority(b.type);
-      if (typeDiff !== 0) {
-        return typeDiff;
-      }
-      return a.id.localeCompare(b.id);
+  for (const node of topoOrder) {
+    const lane = laneById.get(node.id) ?? 0;
+    const size = getNodeSize(node, resolved.nodeSizeOverrides);
+    const laneCenter = lane * resolved.laneSpacing;
+    const rawX = laneCenter - size.width / 2;
+    const baseY = nodeYMap.get(node.id) ?? 0;
+    const rawY = node.type === "outcome"
+      ? baseY + Math.round(resolved.rowSpacing * 0.75)
+      : baseY;
+
+    positionedNodes.push({
+      id: node.id,
+      type: node.type,
+      title: "title" in node ? node.title : node.type,
+      width: size.width,
+      height: size.height,
+      x: rawX,
+      y: rawY,
+      depth: depthById.get(node.id) ?? 0,
+      lane
     });
-
-    for (const node of sortedNodes) {
-      const lane = laneById.get(node.id) ?? 0;
-      const laneIndex = laneStackCount.get(lane) ?? 0;
-      laneStackCount.set(lane, laneIndex + 1);
-
-      const size = resolved.nodeSizeOverrides?.[node.type] ?? NODE_SIZE_MAP[node.type];
-      // Center-align nodes in their lane so handles (at center) line up vertically
-      const laneCenter = lane * resolved.laneSpacing + laneIndex * resolved.sameLaneOffset;
-      const rawX = laneCenter - size.width / 2;
-      const baseY = depthY.get(depth) ?? 0;
-      // Klaviyo-like terminal gap: make incoming edge to End visibly longer.
-      const rawY = node.type === "outcome"
-        ? baseY + Math.round(resolved.rowSpacing * 0.75)
-        : baseY;
-
-      positionedNodes.push({
-        id: node.id,
-        type: node.type,
-        title: "title" in node ? node.title : node.type,
-        width: size.width,
-        height: size.height,
-        x: rawX,
-        y: rawY,
-        depth,
-        lane
-      });
-    }
   }
 
   /* ── Position side nodes (note/strategy): place beside their target ── */
@@ -343,7 +339,7 @@ export function buildLayout(
   for (const sideNode of sideNodes) {
     const targetId = sideTargetMap.get(sideNode.id);
     const targetPositioned = targetId ? positionedById.get(targetId) : undefined;
-    const size = resolved.nodeSizeOverrides?.[sideNode.type] ?? NODE_SIZE_MAP[sideNode.type];
+    const size = getNodeSize(sideNode, resolved.nodeSizeOverrides);
 
     if (targetPositioned) {
       // Place side nodes on the OUTSIDE of their branch
