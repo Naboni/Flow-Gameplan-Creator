@@ -55,40 +55,131 @@ const MESSAGING_FOCI = [
   "Final Urgency, Stock & Scarcity"
 ] as const;
 
-function defaultMessageContent(
-  stepIndex: number,
-  totalSteps: number,
-  channel: "email" | "sms",
-  branchLabel?: string
-): { copyHint: string; discountCode: { included: boolean; description?: string }; messagingFocus: string } {
-  const focus = MESSAGING_FOCI[Math.min(stepIndex - 1, MESSAGING_FOCI.length - 1)];
-  const includeDiscount = stepIndex >= Math.max(2, totalSteps - 1);
-  const suffix = branchLabel ? ` (${branchLabel} branch)` : "";
-  return {
-    copyHint: `${channel === "email" ? "Email" : "SMS"} step ${stepIndex}${suffix}: reinforce brand value and move subscribers toward conversion.`,
-    discountCode: includeDiscount
-      ? { included: true, description: "Include a discount to drive urgency" }
-      : { included: false },
-    messagingFocus: focus
-  };
-}
+/* ── Strategy templates per flow type ── */
+
+const STRATEGY_BY_FLOW_TYPE: Record<string, { primary: string; secondary: string }> = {
+  "Email Welcome": {
+    primary: "Create a strong first impression and set expectations for the relationship.",
+    secondary: "Introduce brand values and guide subscribers toward their first purchase."
+  },
+  "SMS Welcome": {
+    primary: "Establish the SMS channel as high-value and time-sensitive.",
+    secondary: "Drive immediate engagement with concise, mobile-optimized messaging."
+  },
+  "Checkout Abandonment": {
+    primary: "Recover abandoned checkouts by addressing friction and urgency.",
+    secondary: "Reinforce product value and offer support to complete the purchase."
+  },
+  "Cart Abandonment": {
+    primary: "Remind shoppers of items left in cart and drive them back to purchase.",
+    secondary: "Use social proof and scarcity to motivate action."
+  },
+  "Browse Abandonment": {
+    primary: "Re-engage browsers with personalized product recommendations.",
+    secondary: "Build consideration through reviews, comparisons, and value messaging."
+  },
+  "Site Abandonment": {
+    primary: "Recapture visitors who left without browsing products.",
+    secondary: "Highlight bestsellers and trending items to spark interest."
+  },
+  "Post-Purchase": {
+    primary: "Build loyalty and increase customer lifetime value after purchase.",
+    secondary: "Drive reviews, referrals, and repeat purchases through cross-sell."
+  },
+  "Winback": {
+    primary: "Re-engage lapsed customers and rekindle interest in the brand.",
+    secondary: "Use escalating incentives and emotional appeals to win them back."
+  },
+  "Sunset": {
+    primary: "Clean the list by identifying truly disengaged subscribers.",
+    secondary: "Give a final chance to re-engage before suppression."
+  }
+};
+
+/* ── Title templates for more descriptive message names ── */
+
+const TITLE_TEMPLATES: Record<string, string[]> = {
+  "Email Welcome": ["Welcome!", "Our Story", "Why Customers Love Us", "Exclusive Benefits", "Your Special Offer"],
+  "SMS Welcome": ["Welcome — Quick Intro", "Don't Miss Out", "Exclusive for You"],
+  "Checkout Abandonment": ["Complete Your Order", "Still Thinking?", "Your Cart is Waiting", "Final Reminder"],
+  "Cart Abandonment": ["You Left Something Behind", "Still Interested?", "Your Items Are Going Fast", "Last Chance"],
+  "Browse Abandonment": ["We Noticed You Looking", "Curated Just for You", "Trending Now", "See What's New"],
+  "Site Abandonment": ["Welcome Back", "Discover Our Bestsellers", "What You're Missing"],
+  "Post-Purchase": ["Order Confirmed!", "How's Your Purchase?", "You Might Also Like", "Leave a Review"],
+  "Winback": ["We Miss You!", "A Lot Has Changed", "Come Back for Something Special"],
+  "Sunset": ["Are You Still There?", "Last Chance to Stay", "We're Saying Goodbye"]
+};
+
+/* ── Helpers ── */
 
 function withDelay(options?: ExpandTemplateOptions): DelayConfig {
   return options?.defaultDelay ?? DEFAULT_DELAY;
 }
 
-function createWaitNodeId(prefix: string, branchKey: string, lane: string, index: number): string {
-  return `${prefix}_${branchKey}_${lane}_wait_${index}`;
+function getMessageTitle(flowName: string, stepIndex: number, channel: "email" | "sms", branchLabel?: string): string {
+  const titles = TITLE_TEMPLATES[flowName];
+  const suffix = branchLabel ? ` (${branchLabel})` : "";
+  if (titles && titles[stepIndex - 1]) {
+    return `${titles[stepIndex - 1]}${suffix}`;
+  }
+  return `${channel === "email" ? "Email" : "SMS"} ${stepIndex}${suffix}`;
 }
 
-function createMessageNodeId(prefix: string, branchKey: string, lane: string, index: number): string {
-  return `${prefix}_${branchKey}_${lane}_${index}`;
+function getMessageContent(
+  stepIndex: number,
+  totalSteps: number,
+  channel: "email" | "sms",
+  flowName: string,
+  isFirstInBranch: boolean,
+  branchLabel?: string
+) {
+  const focus = MESSAGING_FOCI[Math.min(stepIndex - 1, MESSAGING_FOCI.length - 1)];
+  const includeDiscount = stepIndex >= Math.max(2, totalSteps - 1);
+  const strategyEntry = STRATEGY_BY_FLOW_TYPE[flowName];
+
+  return {
+    copyHint: `${channel === "email" ? "Email" : "SMS"} step ${stepIndex}${branchLabel ? ` (${branchLabel})` : ""}: reinforce brand value and move subscribers toward conversion.`,
+    discountCode: includeDiscount
+      ? { included: true, description: "Include an incentive to drive urgency" }
+      : { included: false },
+    messagingFocus: focus,
+    smartSending: stepIndex > 1,
+    utmLinks: true,
+    filterConditions: "NA" as string,
+    implementationNotes: stepIndex === 1
+      ? "First touch in this sequence. Set appropriate send timing."
+      : `Step ${stepIndex} of ${totalSteps}. Ensure proper delay from previous message.`,
+    strategy: isFirstInBranch && strategyEntry
+      ? { primaryFocus: strategyEntry.primary, secondaryFocus: strategyEntry.secondary }
+      : undefined
+  };
 }
 
-function createLinearFlow(
-  blueprint: LinearFlowBlueprint,
-  delay: DelayConfig
-): FlowSpec {
+/**
+ * Build an interleaved sequence of email + SMS messages as a single lane.
+ * Pattern: emails first, then SMS — e.g. E1 → E2 → S1 → E3 → S2
+ */
+function buildInterleavedSequence(emailCount: number, smsCount: number): Array<"email" | "sms"> {
+  const seq: Array<"email" | "sms"> = [];
+  let ei = 0;
+  let si = 0;
+  const total = emailCount + smsCount;
+
+  for (let i = 0; i < total; i++) {
+    if (ei < emailCount && (si >= smsCount || ei / emailCount <= si / smsCount)) {
+      seq.push("email");
+      ei++;
+    } else {
+      seq.push("sms");
+      si++;
+    }
+  }
+  return seq;
+}
+
+/* ── Linear flow builder ── */
+
+function createLinearFlow(blueprint: LinearFlowBlueprint, delay: DelayConfig): FlowSpec {
   const flowId = blueprint.id;
   const hasEmail = blueprint.emailCount > 0;
   const hasSms = blueprint.smsCount > 0;
@@ -98,97 +189,64 @@ function createLinearFlow(
   ];
 
   const nodes: FlowSpec["nodes"] = [
-    {
-      id: `${flowId}_trigger`,
-      type: "trigger",
-      title: "Trigger",
-      event: blueprint.triggerEvent
-    }
+    { id: `${flowId}_trigger`, type: "trigger", title: "Trigger", event: blueprint.triggerEvent }
   ];
-
   const edges: FlowSpec["edges"] = [];
 
-  function buildLane(channel: "email" | "sms", count: number): string | null {
-    if (count <= 0) {
-      return null;
-    }
+  const sequence = buildInterleavedSequence(blueprint.emailCount, blueprint.smsCount);
+  const totalSteps = sequence.length;
+  let previousId = `${flowId}_trigger`;
 
-    let previousId = `${flowId}_trigger`;
-    for (let i = 1; i <= count; i += 1) {
-      const messageId = createMessageNodeId(flowId, "linear", channel, i);
-      const content = defaultMessageContent(i, count, channel);
-      nodes.push({
-        id: messageId,
-        type: "message",
-        channel,
-        title: `${channel === "email" ? "Email" : "SMS"} ${i}`,
-        stepIndex: i,
-        copyHint: content.copyHint,
-        discountCode: content.discountCode,
-        messagingFocus: content.messagingFocus
-      });
-      edges.push({
-        id: `${flowId}_e_${previousId}_to_${messageId}`,
-        from: previousId,
-        to: messageId
-      });
-      previousId = messageId;
-      if (i < count) {
-        const waitId = createWaitNodeId(flowId, "linear", channel, i);
-        nodes.push({
-          id: waitId,
-          type: "wait",
-          duration: delay
-        });
-        edges.push({
-          id: `${flowId}_e_${previousId}_to_${waitId}`,
-          from: previousId,
-          to: waitId
-        });
-        previousId = waitId;
-      }
+  for (let i = 0; i < sequence.length; i++) {
+    const channel = sequence[i];
+    const stepIndex = i + 1;
+    const messageId = `${flowId}_msg_${stepIndex}`;
+    const content = getMessageContent(stepIndex, totalSteps, channel, blueprint.name, i === 0);
+
+    nodes.push({
+      id: messageId,
+      type: "message",
+      channel,
+      title: getMessageTitle(blueprint.name, stepIndex, channel),
+      stepIndex,
+      copyHint: content.copyHint,
+      discountCode: content.discountCode,
+      messagingFocus: content.messagingFocus,
+      smartSending: content.smartSending,
+      utmLinks: content.utmLinks,
+      filterConditions: content.filterConditions,
+      implementationNotes: content.implementationNotes,
+      ...(content.strategy ? { strategy: content.strategy } : {})
+    });
+    edges.push({ id: `${flowId}_e_${previousId}_to_${messageId}`, from: previousId, to: messageId });
+    previousId = messageId;
+
+    if (i < sequence.length - 1) {
+      const waitId = `${flowId}_wait_${stepIndex}`;
+      nodes.push({ id: waitId, type: "wait", duration: delay });
+      edges.push({ id: `${flowId}_e_${previousId}_to_${waitId}`, from: previousId, to: waitId });
+      previousId = waitId;
     }
-    return previousId;
   }
-
-  const laneEnds = [
-    buildLane("email", blueprint.emailCount),
-    buildLane("sms", blueprint.smsCount)
-  ].filter(Boolean) as string[];
 
   const outcomeId = `${flowId}_outcome`;
-  nodes.push({
-    id: outcomeId,
-    type: "outcome",
-    title: "Path Complete",
-    result: "Flow completed"
-  });
-
-  for (const laneEnd of laneEnds) {
-    edges.push({
-      id: `${flowId}_e_${laneEnd}_to_${outcomeId}`,
-      from: laneEnd,
-      to: outcomeId
-    });
-  }
+  nodes.push({ id: outcomeId, type: "outcome", title: "End", result: "Flow completed" });
+  edges.push({ id: `${flowId}_e_${previousId}_to_${outcomeId}`, from: previousId, to: outcomeId });
 
   return parseFlowSpec({
     id: flowId,
     name: blueprint.name,
-    source: {
-      mode: "template",
-      templateKey: "core-foundation"
-    },
+    source: { mode: "template", templateKey: "core-foundation" },
     channels,
-    defaults: {
-      delay
-    },
+    defaults: { delay },
     nodes,
     edges
   });
 }
 
-function buildBranchLane(
+/* ── Branch builder (single interleaved lane per branch) ── */
+
+function buildBranch(
   nodes: FlowSpec["nodes"],
   edges: FlowSpec["edges"],
   flowId: string,
@@ -196,57 +254,58 @@ function buildBranchLane(
   delay: DelayConfig,
   branchKey: SegmentKey,
   branchLabel: string,
-  channel: "email" | "sms",
-  count: number
-): string | null {
-  if (count <= 0) {
-    return null;
-  }
+  counts: FlowCounts,
+  flowName: string
+): string {
+  const sequence = buildInterleavedSequence(counts.email, counts.sms);
+  if (sequence.length === 0) return splitId;
 
+  const totalSteps = sequence.length;
   let previousId = splitId;
-  for (let i = 1; i <= count; i += 1) {
-    const messageId = createMessageNodeId(flowId, branchKey, channel, i);
-    const content = defaultMessageContent(i, count, channel, branchLabel);
+
+  for (let i = 0; i < sequence.length; i++) {
+    const channel = sequence[i];
+    const stepIndex = i + 1;
+    const messageId = `${flowId}_${branchKey}_msg_${stepIndex}`;
+    const content = getMessageContent(stepIndex, totalSteps, channel, flowName, i === 0, branchLabel);
+
     nodes.push({
       id: messageId,
       type: "message",
       channel,
-      title: `${channel === "email" ? "Email" : "SMS"} ${i} (${branchLabel})`,
-      stepIndex: i,
+      title: getMessageTitle(flowName, stepIndex, channel, branchLabel),
+      stepIndex,
       copyHint: content.copyHint,
       discountCode: content.discountCode,
-      messagingFocus: content.messagingFocus
+      messagingFocus: content.messagingFocus,
+      smartSending: content.smartSending,
+      utmLinks: content.utmLinks,
+      filterConditions: content.filterConditions,
+      implementationNotes: content.implementationNotes,
+      ...(content.strategy ? { strategy: content.strategy } : {})
     });
     edges.push({
-      id: `${flowId}_e_${previousId}_to_${messageId}_${channel}_${branchKey}_${i}`,
+      id: `${flowId}_e_${previousId}_to_${messageId}`,
       from: previousId,
       to: messageId,
       label: previousId === splitId ? branchLabel : undefined
     });
     previousId = messageId;
 
-    if (i < count) {
-      const waitId = createWaitNodeId(flowId, branchKey, channel, i);
-      nodes.push({
-        id: waitId,
-        type: "wait",
-        duration: delay
-      });
-      edges.push({
-        id: `${flowId}_e_${previousId}_to_${waitId}`,
-        from: previousId,
-        to: waitId
-      });
+    if (i < sequence.length - 1) {
+      const waitId = `${flowId}_${branchKey}_wait_${stepIndex}`;
+      nodes.push({ id: waitId, type: "wait", duration: delay });
+      edges.push({ id: `${flowId}_e_${previousId}_to_${waitId}`, from: previousId, to: waitId });
       previousId = waitId;
     }
   }
+
   return previousId;
 }
 
-function createSplitFlow(
-  blueprint: SplitFlowBlueprint,
-  delay: DelayConfig
-): FlowSpec {
+/* ── Split flow builder ── */
+
+function createSplitFlow(blueprint: SplitFlowBlueprint, delay: DelayConfig): FlowSpec {
   const flowId = blueprint.id;
   const yesLabel = blueprint.yesLabel ?? "Yes";
   const noLabel = blueprint.noLabel ?? "No";
@@ -258,86 +317,41 @@ function createSplitFlow(
   const triggerId = `${flowId}_trigger`;
   const splitId = `${flowId}_split`;
   const nodes: FlowSpec["nodes"] = [
-    {
-      id: triggerId,
-      type: "trigger",
-      title: "Trigger",
-      event: blueprint.triggerEvent
-    },
+    { id: triggerId, type: "trigger", title: "Trigger", event: blueprint.triggerEvent },
     {
       id: splitId,
       type: "split",
       title: "Conditional Split",
       condition: blueprint.splitCondition,
-      labels: {
-        yes: yesLabel,
-        no: noLabel
-      }
+      labels: { yes: yesLabel, no: noLabel }
     }
   ];
   const edges: FlowSpec["edges"] = [
-    {
-      id: `${flowId}_e_${triggerId}_to_${splitId}`,
-      from: triggerId,
-      to: splitId
-    }
+    { id: `${flowId}_e_trigger_to_split`, from: triggerId, to: splitId }
   ];
 
-  const yesLaneEnds = [
-    buildBranchLane(nodes, edges, flowId, splitId, delay, "yes", yesLabel, "email", blueprint.yesCounts.email),
-    buildBranchLane(nodes, edges, flowId, splitId, delay, "yes", yesLabel, "sms", blueprint.yesCounts.sms)
-  ].filter(Boolean) as string[];
-
-  const noLaneEnds = [
-    buildBranchLane(nodes, edges, flowId, splitId, delay, "no", noLabel, "email", blueprint.noCounts.email),
-    buildBranchLane(nodes, edges, flowId, splitId, delay, "no", noLabel, "sms", blueprint.noCounts.sms)
-  ].filter(Boolean) as string[];
+  const yesEnd = buildBranch(nodes, edges, flowId, splitId, delay, "yes", yesLabel, blueprint.yesCounts, blueprint.name);
+  const noEnd = buildBranch(nodes, edges, flowId, splitId, delay, "no", noLabel, blueprint.noCounts, blueprint.name);
 
   const yesOutcomeId = `${flowId}_outcome_yes`;
   const noOutcomeId = `${flowId}_outcome_no`;
-  nodes.push({
-    id: yesOutcomeId,
-    type: "outcome",
-    title: `${yesLabel} Path Complete`,
-    result: `${yesLabel} path completed`
-  });
-  nodes.push({
-    id: noOutcomeId,
-    type: "outcome",
-    title: `${noLabel} Path Complete`,
-    result: `${noLabel} path completed`
-  });
-
-  for (const laneEnd of yesLaneEnds) {
-    edges.push({
-      id: `${flowId}_e_${laneEnd}_to_${yesOutcomeId}`,
-      from: laneEnd,
-      to: yesOutcomeId
-    });
-  }
-  for (const laneEnd of noLaneEnds) {
-    edges.push({
-      id: `${flowId}_e_${laneEnd}_to_${noOutcomeId}`,
-      from: laneEnd,
-      to: noOutcomeId
-    });
-  }
+  nodes.push({ id: yesOutcomeId, type: "outcome", title: "End", result: `${yesLabel} path completed` });
+  nodes.push({ id: noOutcomeId, type: "outcome", title: "End", result: `${noLabel} path completed` });
+  edges.push({ id: `${flowId}_e_${yesEnd}_to_${yesOutcomeId}`, from: yesEnd, to: yesOutcomeId });
+  edges.push({ id: `${flowId}_e_${noEnd}_to_${noOutcomeId}`, from: noEnd, to: noOutcomeId });
 
   return parseFlowSpec({
     id: flowId,
     name: blueprint.name,
-    source: {
-      mode: "template",
-      templateKey: "core-foundation"
-    },
+    source: { mode: "template", templateKey: "core-foundation" },
     channels,
-    defaults: {
-      delay
-    },
+    defaults: { delay },
     nodes,
     edges
   });
 }
+
+/* ── Mirror flow helper ── */
 
 function mirrorFlow(base: FlowSpec, id: string, name: string, triggerEvent: string): FlowSpec {
   const nodeMap = new Map<string, string>();
@@ -345,16 +359,9 @@ function mirrorFlow(base: FlowSpec, id: string, name: string, triggerEvent: stri
     const mappedId = node.id.replace(new RegExp(`^${base.id}`), id);
     nodeMap.set(node.id, mappedId);
     if (node.type === "trigger") {
-      return {
-        ...node,
-        id: mappedId,
-        event: triggerEvent
-      };
+      return { ...node, id: mappedId, event: triggerEvent };
     }
-    return {
-      ...node,
-      id: mappedId
-    };
+    return { ...node, id: mappedId };
   });
 
   const mappedEdges = base.edges.map((edge) => ({
@@ -364,95 +371,49 @@ function mirrorFlow(base: FlowSpec, id: string, name: string, triggerEvent: stri
     to: nodeMap.get(edge.to) ?? edge.to
   }));
 
-  return parseFlowSpec({
-    ...base,
-    id,
-    name,
-    nodes: mappedNodes,
-    edges: mappedEdges
-  });
+  return parseFlowSpec({ ...base, id, name, nodes: mappedNodes, edges: mappedEdges });
 }
 
 function attachTemplateKey(flows: FlowSpec[], templateKey: PackageTemplateKey): FlowSpec[] {
   return flows.map((flow) =>
-    parseFlowSpec({
-      ...flow,
-      source: {
-        mode: "template",
-        templateKey
-      }
-    })
+    parseFlowSpec({ ...flow, source: { mode: "template", templateKey } })
   );
 }
 
+/* ── Plan builders ── */
+
 function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
   const delay = withDelay(options);
+
   const emailWelcome = createLinearFlow(
-    {
-      id: "core_email_welcome",
-      name: "Email Welcome",
-      triggerEvent: "Triggered when a user signs up for updates from your brand.",
-      emailCount: 3,
-      smsCount: 0
-    },
+    { id: "core_email_welcome", name: "Email Welcome", triggerEvent: "When someone subscribes to the email list", emailCount: 3, smsCount: 0 },
     delay
   );
   const smsWelcome = createLinearFlow(
-    {
-      id: "core_sms_welcome",
-      name: "SMS Welcome",
-      triggerEvent: "Triggered when a user opts in to SMS updates.",
-      emailCount: 0,
-      smsCount: 2
-    },
+    { id: "core_sms_welcome", name: "SMS Welcome", triggerEvent: "When someone opts in to SMS updates", emailCount: 0, smsCount: 2 },
     delay
   );
   const checkoutAbandonment = createLinearFlow(
-    {
-      id: "core_checkout_abandonment",
-      name: "Checkout Abandonment",
-      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
-      emailCount: 2,
-      smsCount: 2
-    },
+    { id: "core_checkout_abandonment", name: "Checkout Abandonment", triggerEvent: "When someone starts checkout but does not complete purchase", emailCount: 2, smsCount: 2 },
     delay
   );
   const cartAbandonment = mirrorFlow(
     checkoutAbandonment,
     "core_cart_abandonment",
     "Cart Abandonment",
-    "Triggered when someone adds to cart but does not purchase."
+    "When someone adds to cart but does not purchase"
   );
   const browseAbandonment = createLinearFlow(
-    {
-      id: "core_browse_abandonment",
-      name: "Browse Abandonment",
-      triggerEvent: "Triggered when someone views products but does not add to cart.",
-      emailCount: 2,
-      smsCount: 2
-    },
+    { id: "core_browse_abandonment", name: "Browse Abandonment", triggerEvent: "When someone views products but does not add to cart", emailCount: 2, smsCount: 2 },
     delay
   );
   const postPurchase = createLinearFlow(
-    {
-      id: "core_post_purchase",
-      name: "Post-Purchase",
-      triggerEvent: "Triggered when someone places an order.",
-      emailCount: 1,
-      smsCount: 1
-    },
+    { id: "core_post_purchase", name: "Post-Purchase", triggerEvent: "When someone places an order", emailCount: 1, smsCount: 1 },
     delay
   );
 
   const flows = attachTemplateKey(
-    [
-      emailWelcome,
-      smsWelcome,
-      checkoutAbandonment,
-      cartAbandonment,
-      browseAbandonment,
-      postPurchase
-    ],
+    [emailWelcome, smsWelcome, checkoutAbandonment, cartAbandonment, browseAbandonment, postPurchase],
     "core-foundation"
   );
 
@@ -465,119 +426,50 @@ function buildCoreFoundation(options?: ExpandTemplateOptions): ExpandedPackage {
 
 function buildGrowthEngine(options?: ExpandTemplateOptions): ExpandedPackage {
   const delay = withDelay(options);
-  const core = buildCoreFoundation(options);
 
   const emailWelcome = createSplitFlow(
-    {
-      id: "growth_email_welcome",
-      name: "Email Welcome",
-      triggerEvent: "Triggered when a user signs up for updates from your brand.",
-      splitCondition: "User has purchased a service or product",
-      yesCounts: { email: 1, sms: 0 },
-      noCounts: { email: 3, sms: 0 },
-      yesLabel: "Yes",
-      noLabel: "No"
-    },
+    { id: "growth_email_welcome", name: "Email Welcome", triggerEvent: "When someone subscribes to the email list", splitCondition: "Has placed an order?", yesCounts: { email: 1, sms: 0 }, noCounts: { email: 3, sms: 0 } },
     delay
   );
   const smsWelcome = createSplitFlow(
-    {
-      id: "growth_sms_welcome",
-      name: "SMS Welcome",
-      triggerEvent: "Triggered when a user opts in to SMS updates.",
-      splitCondition: "User has purchased a service or product",
-      yesCounts: { email: 0, sms: 1 },
-      noCounts: { email: 0, sms: 2 },
-      yesLabel: "Yes",
-      noLabel: "No"
-    },
+    { id: "growth_sms_welcome", name: "SMS Welcome", triggerEvent: "When someone opts in to SMS updates", splitCondition: "Has placed an order?", yesCounts: { email: 0, sms: 1 }, noCounts: { email: 0, sms: 2 } },
     delay
   );
   const checkoutAbandonment = createSplitFlow(
-    {
-      id: "growth_checkout_abandonment",
-      name: "Checkout Abandonment",
-      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 3, sms: 2 },
-      noCounts: { email: 3, sms: 2 }
-    },
+    { id: "growth_checkout_abandonment", name: "Checkout Abandonment", triggerEvent: "When someone starts checkout but does not complete purchase", splitCondition: "Has purchase history?", yesCounts: { email: 3, sms: 2 }, noCounts: { email: 3, sms: 2 } },
     delay
   );
   const cartAbandonment = mirrorFlow(
     checkoutAbandonment,
     "growth_cart_abandonment",
     "Cart Abandonment",
-    "Triggered when someone adds to cart but does not purchase."
+    "When someone adds to cart but does not purchase"
   );
   const browseAbandonment = createSplitFlow(
-    {
-      id: "growth_browse_abandonment",
-      name: "Browse Abandonment",
-      triggerEvent: "Triggered when someone browses products but does not add to cart.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 3, sms: 2 },
-      noCounts: { email: 3, sms: 2 }
-    },
+    { id: "growth_browse_abandonment", name: "Browse Abandonment", triggerEvent: "When someone browses products but does not add to cart", splitCondition: "Has purchase history?", yesCounts: { email: 3, sms: 2 }, noCounts: { email: 3, sms: 2 } },
     delay
   );
   const siteAbandonment = createLinearFlow(
-    {
-      id: "growth_site_abandonment",
-      name: "Site Abandonment",
-      triggerEvent: "Triggered when someone visits site and exits without product view.",
-      emailCount: 2,
-      smsCount: 0
-    },
+    { id: "growth_site_abandonment", name: "Site Abandonment", triggerEvent: "When someone visits site and exits without product view", emailCount: 2, smsCount: 0 },
     delay
   );
   const postPurchase = createSplitFlow(
-    {
-      id: "growth_post_purchase",
-      name: "Post-Purchase",
-      triggerEvent: "Triggered when someone places an order.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 2, sms: 1 },
-      noCounts: { email: 1, sms: 1 }
-    },
+    { id: "growth_post_purchase", name: "Post-Purchase", triggerEvent: "When someone places an order", splitCondition: "Has purchase history?", yesCounts: { email: 2, sms: 1 }, noCounts: { email: 1, sms: 1 } },
     delay
   );
   const winback = createLinearFlow(
-    {
-      id: "growth_winback",
-      name: "Winback",
-      triggerEvent: "Triggered when customer is inactive for a defined window.",
-      emailCount: 2,
-      smsCount: 0
-    },
+    { id: "growth_winback", name: "Winback", triggerEvent: "When customer is inactive for a defined window", emailCount: 2, smsCount: 0 },
     delay
   );
 
   const flows = attachTemplateKey(
-    [
-      ...core.flows.filter((flow) => flow.id.startsWith("core_")).map((flow) =>
-        parseFlowSpec({
-          ...flow,
-          id: flow.id.replace("core_", "growth_"),
-          name: flow.name
-        })
-      ),
-      emailWelcome,
-      smsWelcome,
-      checkoutAbandonment,
-      cartAbandonment,
-      browseAbandonment,
-      siteAbandonment,
-      postPurchase,
-      winback
-    ],
+    [emailWelcome, smsWelcome, checkoutAbandonment, cartAbandonment, browseAbandonment, siteAbandonment, postPurchase, winback],
     "growth-engine"
   );
 
-  const uniqueFlows = Array.from(new Map(flows.map((flow) => [flow.id, flow])).values());
   return {
     templateKey: "growth-engine",
-    flows: uniqueFlows,
+    flows,
     mirrors: [{ flowId: "growth_cart_abandonment", mirrorsFlowId: "growth_checkout_abandonment" }]
   };
 }
@@ -586,110 +478,46 @@ function buildFullSystem(options?: ExpandTemplateOptions): ExpandedPackage {
   const delay = withDelay(options);
 
   const emailWelcome = createSplitFlow(
-    {
-      id: "full_email_welcome",
-      name: "Email Welcome",
-      triggerEvent: "Triggered when a user signs up for updates from your brand.",
-      splitCondition: "User has purchased a service or product",
-      yesCounts: { email: 2, sms: 0 },
-      noCounts: { email: 4, sms: 0 }
-    },
+    { id: "full_email_welcome", name: "Email Welcome", triggerEvent: "When someone subscribes to the email list", splitCondition: "Has placed an order?", yesCounts: { email: 2, sms: 0 }, noCounts: { email: 4, sms: 0 } },
     delay
   );
   const smsWelcome = createSplitFlow(
-    {
-      id: "full_sms_welcome",
-      name: "SMS Welcome",
-      triggerEvent: "Triggered when a user opts in to SMS updates.",
-      splitCondition: "User has purchased a service or product",
-      yesCounts: { email: 0, sms: 1 },
-      noCounts: { email: 0, sms: 3 }
-    },
+    { id: "full_sms_welcome", name: "SMS Welcome", triggerEvent: "When someone opts in to SMS updates", splitCondition: "Has placed an order?", yesCounts: { email: 0, sms: 1 }, noCounts: { email: 0, sms: 3 } },
     delay
   );
   const checkoutAbandonment = createSplitFlow(
-    {
-      id: "full_checkout_abandonment",
-      name: "Checkout Abandonment",
-      triggerEvent: "Triggered when someone starts checkout but does not complete purchase.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 4, sms: 2 },
-      noCounts: { email: 4, sms: 2 }
-    },
+    { id: "full_checkout_abandonment", name: "Checkout Abandonment", triggerEvent: "When someone starts checkout but does not complete purchase", splitCondition: "Has purchase history?", yesCounts: { email: 4, sms: 2 }, noCounts: { email: 4, sms: 2 } },
     delay
   );
   const cartAbandonment = mirrorFlow(
     checkoutAbandonment,
     "full_cart_abandonment",
     "Cart Abandonment",
-    "Triggered when someone adds to cart but does not purchase."
+    "When someone adds to cart but does not purchase"
   );
   const browseAbandonment = createSplitFlow(
-    {
-      id: "full_browse_abandonment",
-      name: "Browse Abandonment",
-      triggerEvent: "Triggered when someone browses products but does not add to cart.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 4, sms: 2 },
-      noCounts: { email: 4, sms: 2 }
-    },
+    { id: "full_browse_abandonment", name: "Browse Abandonment", triggerEvent: "When someone browses products but does not add to cart", splitCondition: "Has purchase history?", yesCounts: { email: 4, sms: 2 }, noCounts: { email: 4, sms: 2 } },
     delay
   );
   const siteAbandonment = createLinearFlow(
-    {
-      id: "full_site_abandonment",
-      name: "Site Abandonment",
-      triggerEvent: "Triggered when someone visits site and exits without product view.",
-      emailCount: 3,
-      smsCount: 0
-    },
+    { id: "full_site_abandonment", name: "Site Abandonment", triggerEvent: "When someone visits site and exits without product view", emailCount: 3, smsCount: 0 },
     delay
   );
   const postPurchase = createSplitFlow(
-    {
-      id: "full_post_purchase",
-      name: "Post-Purchase",
-      triggerEvent: "Triggered when someone places an order.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 3, sms: 2 },
-      noCounts: { email: 3, sms: 1 }
-    },
+    { id: "full_post_purchase", name: "Post-Purchase", triggerEvent: "When someone places an order", splitCondition: "Has purchase history?", yesCounts: { email: 3, sms: 2 }, noCounts: { email: 3, sms: 1 } },
     delay
   );
   const winback = createSplitFlow(
-    {
-      id: "full_winback",
-      name: "Winback",
-      triggerEvent: "Triggered when customer is inactive for a defined window.",
-      splitCondition: "User has purchase history",
-      yesCounts: { email: 3, sms: 0 },
-      noCounts: { email: 3, sms: 0 }
-    },
+    { id: "full_winback", name: "Winback", triggerEvent: "When customer is inactive for a defined window", splitCondition: "Has purchase history?", yesCounts: { email: 3, sms: 0 }, noCounts: { email: 3, sms: 0 } },
     delay
   );
   const sunset = createLinearFlow(
-    {
-      id: "full_sunset",
-      name: "Sunset",
-      triggerEvent: "Triggered when subscriber remains inactive after winback.",
-      emailCount: 3,
-      smsCount: 0
-    },
+    { id: "full_sunset", name: "Sunset", triggerEvent: "When subscriber remains inactive after winback", emailCount: 3, smsCount: 0 },
     delay
   );
 
   const flows = attachTemplateKey(
-    [
-      emailWelcome,
-      smsWelcome,
-      checkoutAbandonment,
-      cartAbandonment,
-      browseAbandonment,
-      siteAbandonment,
-      postPurchase,
-      winback,
-      sunset
-    ],
+    [emailWelcome, smsWelcome, checkoutAbandonment, cartAbandonment, browseAbandonment, siteAbandonment, postPurchase, winback, sunset],
     "full-system"
   );
 
@@ -704,11 +532,7 @@ export function expandPackageTemplate(
   templateKey: PackageTemplateKey,
   options?: ExpandTemplateOptions
 ): ExpandedPackage {
-  if (templateKey === "core-foundation") {
-    return buildCoreFoundation(options);
-  }
-  if (templateKey === "growth-engine") {
-    return buildGrowthEngine(options);
-  }
+  if (templateKey === "core-foundation") return buildCoreFoundation(options);
+  if (templateKey === "growth-engine") return buildGrowthEngine(options);
   return buildFullSystem(options);
 }
