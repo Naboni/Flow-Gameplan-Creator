@@ -6,8 +6,8 @@ export const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:3001"
 
 export const EDGE_STYLE = {
   type: "smartEdge" as const,
-  markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
-  style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: "#9ea0a3", width: 12, height: 12 },
+  style: { stroke: "#9ea0a3", strokeWidth: 1 },
   labelStyle: { fill: "#475569", fontWeight: 600, fontSize: 11 },
   labelShowBg: true,
   labelBgStyle: { fill: "#ffffff", fillOpacity: 1 },
