@@ -24,14 +24,52 @@ function buildVerticalPath(sx: number, sy: number, tx: number, ty: number, r = 8
   return [path, labelX, labelY];
 }
 
+/**
+ * Custom path for split branch edges (Yes/No).
+ * Long vertical drop from source, short horizontal turn, then short vertical drop to target.
+ * Label is placed at the start of the final vertical drop (where the branch begins going down).
+ */
+function buildBranchPath(sx: number, sy: number, tx: number, ty: number, r = 8): [string, number, number] {
+  const branchDrop = 50; // vertical drop from horizontal line to child (matches default A-B gap)
+  const horizontalY = ty - branchDrop;
+
+  const dx = tx - sx;
+  const sign = dx > 0 ? 1 : -1;
+  const cr = Math.min(r, Math.abs(dx) / 2, Math.abs(horizontalY - sy), branchDrop);
+
+  const path =
+    `M ${sx} ${sy} ` +
+    `L ${sx} ${horizontalY - cr} ` +
+    `Q ${sx} ${horizontalY} ${sx + sign * cr} ${horizontalY} ` +
+    `L ${tx - sign * cr} ${horizontalY} ` +
+    `Q ${tx} ${horizontalY} ${tx} ${horizontalY + cr} ` +
+    `L ${tx} ${ty}`;
+
+  // Place label at the top of the final vertical drop (right below horizontal turn)
+  const labelX = tx;
+  const labelY = horizontalY + branchDrop / 2;
+
+  return [path, labelX, labelY];
+}
+
+function isBranchLabel(label: unknown): boolean {
+  if (typeof label !== "string") return false;
+  const normalized = label.trim().toLowerCase();
+  return normalized === "yes" || normalized === "no";
+}
+
 export function SmartEdge(props: EdgeProps) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = props;
 
   const isVerticalFlow = sourcePosition === Position.Bottom && targetPosition === Position.Top;
   const isSameLane = Math.abs(sourceX - targetX) < 5;
+  const isBranch = isBranchLabel(props.label) && !isSameLane;
 
   let path: string, labelX: number, labelY: number;
-  if (isVerticalFlow && isSameLane) {
+
+  if (isBranch) {
+    [path, labelX, labelY] = buildBranchPath(sourceX, sourceY, targetX, targetY, 8);
+  } else if (isVerticalFlow && isSameLane) {
     [path, labelX, labelY] = buildVerticalPath(sourceX, sourceY, targetX, targetY, 8);
   } else {
     [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, borderRadius: 8 });

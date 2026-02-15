@@ -41,7 +41,7 @@ export type LayoutOptions = {
 };
 
 const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides" | "nodeSizeOverrides"> = {
-  rowSpacing: 220,
+  rowSpacing: 44,
   laneSpacing: 200,
   sameLaneOffset: 340,
   paddingX: 120,
@@ -49,12 +49,12 @@ const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides" 
 };
 
 const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }> = {
-  trigger: { width: 280, height: 90 },
+  trigger: { width: 280, height: 94 },
   profileFilter: { width: 280, height: 100 },
   split: { width: 280, height: 100 },
-  wait: { width: 280, height: 56 },
-  message: { width: 280, height: 150 },
-  outcome: { width: 280, height: 80 },
+  wait: { width: 280, height: 48 },
+  message: { width: 280, height: 185 },
+  outcome: { width: 72, height: 22 },
   note: { width: 320, height: 160 },
   strategy: { width: 320, height: 200 }
 };
@@ -273,8 +273,26 @@ export function buildLayout(
     nodesByDepth.set(depth, existing);
   }
 
+  const depthEntries = [...nodesByDepth.entries()].sort((a, b) => a[0] - b[0]);
+  const depthY = new Map<number, number>();
+  let currentY = 0;
+  for (const [depth, depthNodes] of depthEntries) {
+    depthY.set(depth, currentY);
+    let maxHeightForDepth = 0;
+    for (const node of depthNodes) {
+      const size = resolved.nodeSizeOverrides?.[node.type] ?? NODE_SIZE_MAP[node.type];
+      if (size.height > maxHeightForDepth) {
+        maxHeightForDepth = size.height;
+      }
+    }
+    // Extra vertical space after split rows for Klaviyo-style long drop before branching
+    const hasSplit = depthNodes.some((n) => n.type === "split");
+    const gap = hasSplit ? resolved.rowSpacing * 2.25 : resolved.rowSpacing;
+    currentY += maxHeightForDepth + gap;
+  }
+
   const positionedNodes: PositionedNode[] = [];
-  for (const [depth, depthNodes] of [...nodesByDepth.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [depth, depthNodes] of depthEntries) {
     const laneStackCount = new Map<number, number>();
     const sortedNodes = [...depthNodes].sort((a, b) => {
       const laneDiff = (laneById.get(a.id) ?? 0) - (laneById.get(b.id) ?? 0);
@@ -297,7 +315,11 @@ export function buildLayout(
       // Center-align nodes in their lane so handles (at center) line up vertically
       const laneCenter = lane * resolved.laneSpacing + laneIndex * resolved.sameLaneOffset;
       const rawX = laneCenter - size.width / 2;
-      const rawY = depth * resolved.rowSpacing;
+      const baseY = depthY.get(depth) ?? 0;
+      // Klaviyo-like terminal gap: make incoming edge to End visibly longer.
+      const rawY = node.type === "outcome"
+        ? baseY + Math.round(resolved.rowSpacing * 0.75)
+        : baseY;
 
       positionedNodes.push({
         id: node.id,

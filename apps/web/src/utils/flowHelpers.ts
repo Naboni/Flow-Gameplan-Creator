@@ -86,6 +86,7 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
   const sideNodeIds = new Set(
     spec.nodes.filter((n) => n.type === "note" || n.type === "strategy").map((n) => n.id)
   );
+  const nodeById = new Map(spec.nodes.map((n) => [n.id, n]));
 
   const nodePositionMap = new Map<string, { x: number }>();
   if (rfNodes) {
@@ -93,8 +94,30 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
   }
 
   return spec.edges.map((e) => {
+    const normalizedLabel = typeof e.label === "string" ? e.label.trim().toLowerCase() : "";
+    const targetNode = nodeById.get(e.to);
+    const isEndTarget = targetNode?.type === "outcome";
+    const edgeBase = isEndTarget
+      ? { ...EDGE_STYLE, markerEnd: undefined as unknown as never }
+      : EDGE_STYLE;
+    const branchLabelStyle = normalizedLabel === "yes"
+      ? {
+          labelStyle: { fill: "#ffffff", fontWeight: 600, fontSize: 10 },
+          labelBgStyle: { fill: "#2563eb", fillOpacity: 1 },
+          labelBgPadding: [8, 3] as [number, number],
+          labelBgBorderRadius: 10
+        }
+      : normalizedLabel === "no"
+        ? {
+            labelStyle: { fill: "#ffffff", fontWeight: 600, fontSize: 10 },
+            labelBgStyle: { fill: "#6b7280", fillOpacity: 1 },
+            labelBgPadding: [8, 3] as [number, number],
+            labelBgBorderRadius: 10
+          }
+        : {};
+
     if (!sideNodeIds.has(e.from)) {
-      return { id: e.id, source: e.from, target: e.to, label: e.label, ...EDGE_STYLE };
+      return { id: e.id, source: e.from, target: e.to, label: e.label, ...edgeBase, ...branchLabelStyle };
     }
 
     const sourcePos = nodePositionMap.get(e.from);
@@ -108,7 +131,8 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
       label: e.label,
       sourceHandle: isRightSide ? "source-left" : "source-right",
       targetHandle: isRightSide ? "right" : "left",
-      ...EDGE_STYLE
+      ...edgeBase,
+      ...branchLabelStyle
     };
   });
 }

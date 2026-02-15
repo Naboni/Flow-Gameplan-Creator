@@ -31,6 +31,7 @@ export const PLAN_OPTIONS: Array<{ label: string; value: PlanKey; desc: string }
 ];
 
 const NODE_CONTAINER_WIDTH: Partial<Record<FlowNode["type"], number>> = {
+  outcome: 72,
   note: 320,
   strategy: 320,
 };

@@ -12,6 +12,7 @@
   border-radius: 12px;
   padding: 12px 14px;
   width: 100%;
+  min-height: 185px;
   box-sizing: border-box;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
   cursor: grab;
@@ -27,12 +28,52 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18), 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
+.flow-card--trigger {
+  min-height: 94px;
+}
+
+.flow-card--split,
+.flow-card--filter {
+  min-height: 100px;
+}
+
 .flow-card--wait {
   padding: 10px 14px;
   width: fit-content;
   max-width: 220px;
   min-width: 160px;
+  min-height: 48px;
   margin: 0 auto;
+}
+
+/* ── end node ── */
+
+.flow-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 44px;
+  height: 22px;
+  padding: 0 8px;
+  margin: 0 auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.flow-end--selected {
+  border-color: #64748b;
+  box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.18);
+}
+
+.flow-end__label {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.1px;
 }
 
 .flow-card__header {
@@ -287,4 +328,13 @@
 .flow-handle--strategy:hover {
   background: #ea580c !important;
   box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.25);
+}
+
+.flow-handle--end {
+  width: 6px !important;
+  height: 6px !important;
+  background: #94a3b8 !important;
+  border: 0 !important;
+  top: 0 !important;
+  transform: translate(-50%, -50%) !important;
 }

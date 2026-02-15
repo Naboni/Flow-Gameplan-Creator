@@ -49,6 +49,15 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
     );
   }
 
+  if (fn.type === "outcome") {
+    return (
+      <div className={`flow-end ${selected ? "flow-end--selected" : ""}`}>
+        <Handle type="target" position={Position.Top} className="flow-handle flow-handle--end" />
+        <span className="flow-end__label">End</span>
+      </div>
+    );
+  }
+
   const typeKey = fn.type === "message" ? fn.channel
     : fn.type === "profileFilter" ? "filter"
     : fn.type;
@@ -62,7 +71,6 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   if (fn.type === "trigger") subtitle = fn.event;
   else if (fn.type === "message") subtitle = fn.copyHint || "";
   else if (fn.type === "split") subtitle = fn.condition;
-  else if (fn.type === "outcome") subtitle = fn.result;
   else if (fn.type === "profileFilter") subtitle = fn.filters.join(", ");
 
   return (
