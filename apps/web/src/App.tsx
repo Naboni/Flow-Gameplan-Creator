@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import ReactFlow, {
   addEdge as rfAddEdge,
   applyEdgeChanges,
@@ -12,6 +12,7 @@ import ReactFlow, {
   type EdgeChange,
   type Node,
   type NodeChange,
+  type ReactFlowInstance,
 } from "reactflow";
 import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType } from "@flow/core";
 import { buildLayout } from "@flow/layout";
@@ -42,6 +43,7 @@ import {
   specToRfNodes,
   toRfNode,
 } from "./utils/flowHelpers";
+import { useAutoPosition } from "./hooks/useAutoPosition";
 
 function AppInner() {
   const [tab, setTab] = useState<AppTab>("generate");
@@ -81,7 +83,7 @@ function AppInner() {
 
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
-  const reactFlowRef = useRef<{ screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number } } | null>(null);
+  const reactFlowRef = useRef<ReactFlowInstance | null>(null);
   const nodeTypes = useMemo(() => ({ flowNode: FlowCanvasNode }), []);
   const edgeTypes = useMemo(() => ({ smartEdge: SmartEdge }), []);
 
@@ -160,8 +162,22 @@ function AppInner() {
   }, [activeGenFlow, genNodes]);
 
   const isEditorActive = tab === "editor";
-  const flowNodes = isEditorActive ? editorNodes : (tab === "generate" && activeGenFlow ? genNodes : viewerNodes);
-  const flowEdges = isEditorActive ? editorEdges : (tab === "generate" && activeGenFlow ? genEdges : viewerEdges);
+
+  /* Auto-position: read-only tabs get measured-height-based Y correction */
+  const readOnlyNodes = tab === "generate" && activeGenFlow ? genNodes : viewerNodes;
+  const readOnlyEdges = tab === "generate" && activeGenFlow ? genEdges : viewerEdges;
+  const isReadOnlyCanvas = !isEditorActive && tab !== "library";
+  const { nodes: autoNodes, onNodesChange: autoNodesChange, didReposition } = useAutoPosition(readOnlyNodes, readOnlyEdges, isReadOnlyCanvas);
+
+  const flowNodes = isEditorActive ? editorNodes : autoNodes;
+  const flowEdges = isEditorActive ? editorEdges : readOnlyEdges;
+
+  /* Re-fit view after auto-position correction */
+  useEffect(() => {
+    if (didReposition && reactFlowRef.current) {
+      requestAnimationFrame(() => reactFlowRef.current?.fitView({ duration: 200 }));
+    }
+  }, [didReposition]);
 
   const selectedFlowNode: FlowNode | null = useMemo(() => {
     if (!selectedNodeId) return null;
@@ -184,9 +200,12 @@ function AppInner() {
   /* ── editor handlers ── */
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
-    if (!isEditorActive) return;
-    setEditorNodes((nds) => applyNodeChanges(changes, nds));
-  }, [isEditorActive]);
+    if (isEditorActive) {
+      setEditorNodes((nds) => applyNodeChanges(changes, nds));
+    } else {
+      autoNodesChange(changes);
+    }
+  }, [isEditorActive, autoNodesChange]);
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     if (!isEditorActive) return;
