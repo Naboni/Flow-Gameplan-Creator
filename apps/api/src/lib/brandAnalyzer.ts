@@ -32,6 +32,8 @@ export type BrandProfile = {
   brandTone: string;
   competitors: string;
   specialInstructions: string;
+  brandLogoUrl?: string;
+  brandColor?: string;
 };
 
 /* ── fetch helpers ── */
@@ -203,12 +205,88 @@ async function discoverFromSitemap(baseUrl: string): Promise<Array<{ url: string
   return Array.from(found.entries()).map(([label, url]) => ({ label, url }));
 }
 
+/* ── brand visual extraction ── */
+
+function resolveUrl(href: string, origin: string): string {
+  if (href.startsWith("http")) return href;
+  return `${origin}${href.startsWith("/") ? "" : "/"}${href}`;
+}
+
+function extractBrandVisuals(
+  $: cheerio.CheerioAPI,
+  baseUrl: string,
+  og: Record<string, string>,
+  jsonLd: Record<string, unknown>[]
+): BrandVisuals {
+  const origin = new URL(baseUrl).origin;
+
+  let logoUrl: string | null = null;
+
+  // 1. JSON-LD Organization/WebSite logo (highest quality)
+  for (const item of jsonLd) {
+    const logo = item.logo;
+    if (typeof logo === "string") { logoUrl = resolveUrl(logo, origin); break; }
+    if (logo && typeof logo === "object" && "url" in (logo as Record<string, unknown>)) {
+      const u = (logo as Record<string, string>).url;
+      if (u) { logoUrl = resolveUrl(u, origin); break; }
+    }
+  }
+
+  // 2. Apple-touch-icon (usually 180x180 high-res)
+  if (!logoUrl) {
+    const ati = $('link[rel="apple-touch-icon"]').attr("href");
+    if (ati) logoUrl = resolveUrl(ati, origin);
+  }
+
+  // 3. High-res PNG/SVG favicon
+  if (!logoUrl) {
+    const pngIcon = $('link[rel="icon"][type="image/png"]').attr("href")
+      || $('link[rel="icon"][type="image/svg+xml"]').attr("href");
+    if (pngIcon) logoUrl = resolveUrl(pngIcon, origin);
+  }
+
+  // 4. Open Graph image
+  if (!logoUrl && og["image"]) {
+    logoUrl = og["image"];
+  }
+
+  // 5. Generic favicon link
+  if (!logoUrl) {
+    const favicon = $('link[rel="icon"]').attr("href") || $('link[rel="shortcut icon"]').attr("href");
+    if (favicon) logoUrl = resolveUrl(favicon, origin);
+  }
+
+  // 6. Last resort: /favicon.ico
+  if (!logoUrl) {
+    logoUrl = `${origin}/favicon.ico`;
+  }
+
+  // Theme color extraction
+  let themeColor: string | null = null;
+  const sources = [
+    $('meta[name="theme-color"]').attr("content"),
+    $('meta[name="msapplication-TileColor"]').attr("content"),
+    $('meta[name="msapplication-navbutton-color"]').attr("content"),
+  ];
+  for (const src of sources) {
+    if (src?.trim()) { themeColor = src.trim(); break; }
+  }
+
+  return { logoUrl, themeColor };
+}
+
 /* ── main crawl ── */
+
+type BrandVisuals = {
+  logoUrl: string | null;
+  themeColor: string | null;
+};
 
 type CrawlResult = {
   structuredData: string;
   pageContent: string;
   pagesCount: number;
+  visuals: BrandVisuals;
 };
 
 async function crawlSite(url: string): Promise<CrawlResult> {
@@ -220,7 +298,9 @@ async function crawlSite(url: string): Promise<CrawlResult> {
   const homePage$ = cheerio.load(homepageHtml);
   const structured = extractStructuredData(homePage$);
   const structuredStr = formatStructuredData(structured);
+  const visuals = extractBrandVisuals(homePage$, url, structured.openGraph, structured.jsonLd);
   console.log(`[crawl] Structured data: ${structured.jsonLd.length} JSON-LD blocks, ${Object.keys(structured.openGraph).length} OG tags`);
+  console.log(`[crawl] Brand visuals: logo=${visuals.logoUrl ?? "none"}, color=${visuals.themeColor ?? "none"}`);
 
   // Extract text content from homepage
   const homepageContent = extractPageContent(cheerio.load(homepageHtml), 2500);
@@ -277,7 +357,8 @@ async function crawlSite(url: string): Promise<CrawlResult> {
   return {
     structuredData: finalStructuredStr,
     pageContent,
-    pagesCount: sections.length
+    pagesCount: sections.length,
+    visuals
   };
 }
 
@@ -387,6 +468,8 @@ ${crawl.pageContent}`
     keyDifferentiators: parsed.keyDifferentiators || questionnaire?.keyDifferentiators || [],
     brandTone: parsed.brandTone || questionnaire?.brandTone || "friendly and professional",
     competitors: parsed.competitors || questionnaire?.competitors || "unknown",
-    specialInstructions: parsed.specialInstructions || questionnaire?.specialInstructions || ""
+    specialInstructions: parsed.specialInstructions || questionnaire?.specialInstructions || "",
+    brandLogoUrl: crawl.visuals.logoUrl || undefined,
+    brandColor: crawl.visuals.themeColor || undefined,
   };
 }

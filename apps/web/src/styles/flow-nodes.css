@@ -60,6 +60,7 @@
   border-radius: 999px;
   background: #f8fafc;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  position: relative;
 }
 
 .flow-end--selected {
@@ -73,6 +74,35 @@
   font-weight: 600;
   color: #64748b;
   letter-spacing: 0.1px;
+}
+
+.flow-end__menu-btn {
+  position: absolute;
+  right: -24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.flow-end:hover .flow-end__menu-btn {
+  opacity: 1;
+}
+
+.flow-end__menu-btn:hover {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .flow-card__header {
@@ -104,6 +134,35 @@
   font-weight: 600;
   color: #1e293b;
   line-height: 1.3;
+}
+
+/* 3-dot menu on generic cards */
+.flow-card__menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+  opacity: 0;
+}
+
+.flow-card:hover .flow-card__menu-btn,
+.flow-card__menu-btn:focus-visible {
+  opacity: 1;
+}
+
+.flow-card__menu-btn:hover {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .flow-card__subtitle {
@@ -171,10 +230,79 @@
   font-weight: 600;
   font-size: 13px;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.flow-msg__header-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .flow-msg--email .flow-msg__header { background: #6495ED; }
 .flow-msg--sms   .flow-msg__header { background: #4CAF50; }
+
+/* 3-dot menu button */
+.flow-msg__menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  padding: 0;
+}
+
+.flow-msg__menu-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Footer bar with status dropdown */
+.flow-msg__footer-bar {
+  padding: 8px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.flow-msg__status-area {
+  display: inline-flex;
+}
+
+.flow-msg__status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  background: transparent;
+}
+
+.flow-msg__status-btn:hover {
+  filter: brightness(0.95);
+}
+
+.flow-msg__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
 
 .flow-msg__body {
   padding: 10px 14px;
@@ -280,13 +408,46 @@
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
 }
 
+.flow-note__title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
 .flow-note__title {
   font-size: 13px;
   font-weight: 800;
   color: #92400e;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  margin-bottom: 6px;
+  flex: 1;
+}
+
+.flow-note__menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #b45309;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.15s;
+  opacity: 0;
+}
+
+.flow-note:hover .flow-note__menu-btn,
+.flow-note__menu-btn:focus-visible {
+  opacity: 1;
+}
+
+.flow-note__menu-btn:hover {
+  background: rgba(180, 83, 9, 0.1);
 }
 
 .flow-note__body {
@@ -335,6 +496,11 @@
 
 .flow-strategy__header--yes { background: linear-gradient(135deg, #f97316, #ea580c); }
 .flow-strategy__header--no { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+
+.flow-strategy__header-text {
+  flex: 1;
+  min-width: 0;
+}
 
 .flow-strategy__header-icon {
   display: flex;

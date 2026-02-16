@@ -1,8 +1,133 @@
 import { Handle, Position, type NodeProps } from "reactflow";
+import { MoreHorizontal, Eye, Pencil, Trash2, ChevronDown } from "lucide-react";
 import { NodeIcons } from "./NodeIcons";
 import type { AppNodeData } from "../types/flow";
+import type { MessageStatus } from "@flow/core";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { useState } from "react";
 
-export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
+const STATUS_LABELS: Record<MessageStatus, string> = {
+  draft: "Draft selected",
+  manual: "Manual",
+  live: "Live",
+};
+
+const STATUS_COLORS: Record<MessageStatus, string> = {
+  draft: "bg-slate-100 text-slate-600 border-slate-200",
+  manual: "bg-amber-50 text-amber-700 border-amber-200",
+  live: "bg-emerald-50 text-emerald-700 border-emerald-200",
+};
+
+function NodeDeleteMenu({ nodeId, callbacks, className }: { nodeId: string; callbacks: AppNodeData["callbacks"]; className?: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className={className || "flow-card__menu-btn"}
+          onClick={(e) => e.stopPropagation()}
+          title="Actions"
+        >
+          <MoreHorizontal className="w-3.5 h-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={4} className="min-w-[120px]">
+        <DropdownMenuItem
+          onClick={(e) => { e.stopPropagation(); callbacks?.onDelete?.(nodeId); }}
+          className="gap-2 cursor-pointer text-red-600 focus:text-red-600"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function EmailNodeMenu({ nodeId, callbacks }: { nodeId: string; callbacks: AppNodeData["callbacks"] }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flow-msg__menu-btn"
+          onClick={(e) => e.stopPropagation()}
+          title="Actions"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={4} className="min-w-[140px]">
+        <DropdownMenuItem
+          onClick={(e) => { e.stopPropagation(); callbacks?.onEdit?.(nodeId); }}
+          className="gap-2 cursor-pointer"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={(e) => { e.stopPropagation(); callbacks?.onPreview?.(nodeId); }}
+          className="gap-2 cursor-pointer"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          Preview
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={(e) => { e.stopPropagation(); callbacks?.onDelete?.(nodeId); }}
+          className="gap-2 cursor-pointer text-red-600 focus:text-red-600"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function StatusDropdown({
+  nodeId,
+  status,
+  callbacks,
+}: {
+  nodeId: string;
+  status: MessageStatus;
+  callbacks: AppNodeData["callbacks"];
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flow-msg__status-area" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <button className={`flow-msg__status-btn ${STATUS_COLORS[status]}`}>
+            <span className="flow-msg__status-dot" />
+            {STATUS_LABELS[status]}
+            <ChevronDown className="w-3 h-3 ml-1 opacity-60" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={4} className="min-w-[140px]">
+          {(["draft", "manual", "live"] as MessageStatus[]).map((s) => (
+            <DropdownMenuItem
+              key={s}
+              onClick={() => { callbacks?.onStatusChange?.(nodeId, s); setOpen(false); }}
+              className={`gap-2 cursor-pointer ${s === status ? "font-semibold" : ""}`}
+            >
+              <span className={`w-2 h-2 rounded-full ${s === "draft" ? "bg-slate-400" : s === "manual" ? "bg-amber-500" : "bg-emerald-500"}`} />
+              {STATUS_LABELS[s]}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+export function FlowCanvasNode({ data, selected, id }: NodeProps<AppNodeData>) {
   const fn = data.flowNode;
 
   if (fn.type === "strategy") {
@@ -11,7 +136,8 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
       <div className={`flow-strategy flow-strategy--${branch} ${selected ? "flow-strategy--selected" : ""}`}>
         <div className={`flow-strategy__header flow-strategy__header--${branch}`}>
           <div className="flow-strategy__header-icon">{NodeIcons.strategy}</div>
-          <span>{data.title}</span>
+          <span className="flow-strategy__header-text">{data.title}</span>
+          {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} className="flow-msg__menu-btn" />}
         </div>
         <div className="flow-strategy__body">
           <div className="flow-strategy__label">PRIMARY FOCUS</div>
@@ -28,7 +154,10 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   if (fn.type === "note") {
     return (
       <div className={`flow-note ${selected ? "flow-note--selected" : ""}`}>
-        <div className="flow-note__title">{data.title}</div>
+        <div className="flow-note__title-row">
+          <div className="flow-note__title">{data.title}</div>
+          {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} className="flow-note__menu-btn" />}
+        </div>
         <div className="flow-note__body">{fn.body}</div>
         <Handle type="source" position={Position.Left} id="source-left" className="flow-handle flow-handle--note" />
         <Handle type="source" position={Position.Right} id="source-right" className="flow-handle flow-handle--note" />
@@ -39,13 +168,23 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
   if (fn.type === "message") {
     const isEmail = fn.channel === "email";
     const channelClass = isEmail ? "email" : "sms";
+    const status: MessageStatus = fn.status ?? "draft";
+    const hasCallbacks = !!data.callbacks;
+
     return (
       <div className={`flow-msg flow-msg--${channelClass} ${fn.strategy ? "flow-msg--with-strategy" : ""} ${selected ? "flow-msg--selected" : ""}`}>
         <Handle type="target" position={Position.Top} className="flow-handle" />
         <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
         <Handle type="target" position={Position.Right} id="right" className="flow-handle" />
 
-        <div className="flow-msg__header">{data.title}</div>
+        <div className="flow-msg__header">
+          <span className="flow-msg__header-text">{data.title}</span>
+          {hasCallbacks && (
+            isEmail
+              ? <EmailNodeMenu nodeId={id} callbacks={data.callbacks} />
+              : <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} className="flow-msg__menu-btn" />
+          )}
+        </div>
 
         <div className="flow-msg__body">
           <div className="flow-msg__field">
@@ -100,6 +239,12 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
           </>
         )}
 
+        {isEmail && hasCallbacks && (
+          <div className="flow-msg__footer-bar">
+            <StatusDropdown nodeId={id} status={status} callbacks={data.callbacks} />
+          </div>
+        )}
+
         <Handle type="source" position={Position.Bottom} className="flow-handle" />
       </div>
     );
@@ -112,6 +257,7 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
         <div className="flow-card__header">
           <div className="flow-card__icon flow-card__icon--wait">{NodeIcons.wait}</div>
           <span className="flow-card__title">Wait {fn.duration.value} {fn.duration.unit}</span>
+          {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} />}
         </div>
         <Handle type="source" position={Position.Bottom} className="flow-handle" />
       </div>
@@ -123,6 +269,7 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
       <div className={`flow-end ${selected ? "flow-end--selected" : ""}`}>
         <Handle type="target" position={Position.Top} className="flow-handle flow-handle--end" />
         <span className="flow-end__label">End</span>
+        {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} className="flow-end__menu-btn" />}
       </div>
     );
   }
@@ -145,6 +292,7 @@ export function FlowCanvasNode({ data, selected }: NodeProps<AppNodeData>) {
       <div className="flow-card__header">
         <div className={`flow-card__icon flow-card__icon--${typeKey}`}>{icon}</div>
         <div className="flow-card__title">{data.title}</div>
+        {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} />}
       </div>
       {subtitle && <div className="flow-card__subtitle">{subtitle}</div>}
       <Handle type="source" position={Position.Bottom} className="flow-handle" />

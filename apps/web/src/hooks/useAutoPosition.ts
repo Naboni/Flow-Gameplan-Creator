@@ -51,6 +51,20 @@ export function useAutoPosition(
     }
   }, [inputKey, layoutNodes]);
 
+  /* Sync data changes from external state (e.g. status updates) after adjustment.
+     This ensures that when editorNodes data changes without adding/removing nodes,
+     the hook's internal nodes reflect those changes. */
+  useEffect(() => {
+    if (!adjustedRef.current) return;
+    setNodes((prev) =>
+      prev.map((n) => {
+        const updated = layoutNodes.find((ln) => ln.id === n.id);
+        if (!updated || updated.data === n.data) return n;
+        return { ...n, data: updated.data };
+      })
+    );
+  }, [layoutNodes]);
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       if (!enabled) return;
