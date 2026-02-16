@@ -184,16 +184,15 @@ function AppInner() {
   const flowEdges = baseEdges;
   const nodeCallbacksRef = useRef<NodeCallbacks | null>(null);
 
-  /* Inject callbacks into editor message nodes so FlowCanvasNode can show menus.
+  /* Inject callbacks into message nodes so FlowCanvasNode can show menus.
+     Works on both Generate and Editor tabs (any tab with canvas content).
      Uses a ref to avoid circular dependency with callback definitions below. */
+  const showNodeMenus = isCanvasActive && tab !== "viewer";
   const flowNodes = useMemo(() => {
-    if (!isEditorActive || !nodeCallbacksRef.current) return autoNodes;
+    if (!showNodeMenus || !nodeCallbacksRef.current) return autoNodes;
     const cbs = nodeCallbacksRef.current;
-    return autoNodes.map(n => {
-      if (n.data.flowNode.type !== "message") return n;
-      return { ...n, data: { ...n.data, callbacks: cbs } };
-    });
-  }, [autoNodes, isEditorActive]);
+    return autoNodes.map(n => ({ ...n, data: { ...n.data, callbacks: cbs } }));
+  }, [autoNodes, showNodeMenus]);
 
   /* Re-fit view after auto-position correction */
   useEffect(() => {
@@ -280,45 +279,84 @@ function AppInner() {
 
   /* ── email node actions (preview / edit / delete / status) ── */
 
+  const flowNodesRef = useRef(flowNodes);
+  flowNodesRef.current = flowNodes;
+
   const handleNodePreview = useCallback((nodeId: string) => {
-    const node = editorNodes.find(n => n.id === nodeId);
+    const node = flowNodesRef.current.find(n => n.id === nodeId);
     if (!node) return;
     storeNodeForEdit({
       nodeId,
       flowNode: node.data.flowNode,
       brandName: genBrand || genResult?.brandName,
       brandUrl: genUrl,
+      brandLogoUrl: genResult?.brandLogoUrl,
+      brandColor: genResult?.brandColor,
       timestamp: Date.now(),
     });
     window.open(`/email-preview/${nodeId}`, "_blank");
-  }, [editorNodes, genBrand, genUrl, genResult]);
+  }, [genBrand, genUrl, genResult]);
 
   const handleNodeEdit = useCallback((nodeId: string) => {
-    const node = editorNodes.find(n => n.id === nodeId);
+    const node = flowNodesRef.current.find(n => n.id === nodeId);
     if (!node) return;
     storeNodeForEdit({
       nodeId,
       flowNode: node.data.flowNode,
       brandName: genBrand || genResult?.brandName,
       brandUrl: genUrl,
+      brandLogoUrl: genResult?.brandLogoUrl,
+      brandColor: genResult?.brandColor,
       timestamp: Date.now(),
     });
     window.open(`/email-editor/${nodeId}`, "_blank");
-  }, [editorNodes, genBrand, genUrl, genResult]);
+  }, [genBrand, genUrl, genResult]);
 
   const handleNodeDelete = useCallback((nodeId: string) => {
-    setEditorNodes((nds) => nds.filter((n) => n.id !== nodeId));
-    setEditorEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    if (isEditorActive) {
+      setEditorNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setEditorEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    } else if (tab === "generate" && genResult) {
+      setGenResult(prev => {
+        if (!prev) return prev;
+        const flows = prev.flows.map((flow, idx) => {
+          if (idx !== activeFlowIndex) return flow;
+          return {
+            ...flow,
+            nodes: flow.nodes.filter(n => n.id !== nodeId),
+            edges: flow.edges.filter(e => e.from !== nodeId && e.to !== nodeId),
+          };
+        });
+        return { ...prev, flows };
+      });
+    }
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
     setNotice("Node deleted.");
-  }, [selectedNodeId]);
+  }, [isEditorActive, tab, genResult, activeFlowIndex, selectedNodeId]);
 
   const handleNodeStatusChange = useCallback((nodeId: string, status: MessageStatus) => {
-    updateEditorNodeData(nodeId, (fn) => {
-      if (fn.type !== "message") return fn;
-      return { ...fn, status };
-    });
-  }, []);
+    if (isEditorActive) {
+      updateEditorNodeData(nodeId, (fn) => {
+        if (fn.type !== "message") return fn;
+        return { ...fn, status };
+      });
+    } else if (tab === "generate" && genResult) {
+      setGenResult(prev => {
+        if (!prev) return prev;
+        const flows = prev.flows.map((flow, idx) => {
+          if (idx !== activeFlowIndex) return flow;
+          return {
+            ...flow,
+            nodes: flow.nodes.map(n => {
+              if (n.id !== nodeId || n.type !== "message") return n;
+              return { ...n, status };
+            }),
+          };
+        });
+        return { ...prev, flows };
+      });
+    }
+  }, [isEditorActive, tab, genResult, activeFlowIndex]);
 
   const nodeCallbacks: NodeCallbacks = useMemo(() => ({
     onPreview: handleNodePreview,
@@ -330,18 +368,34 @@ function AppInner() {
 
   /* Poll for saves from email editor windows */
   useEffect(() => {
-    if (!isEditorActive) return;
+    const canPoll = isEditorActive || (tab === "generate" && !!genResult);
+    if (!canPoll) return;
     const interval = setInterval(() => {
       const saved = loadSavedNode();
       if (!saved) return;
-      const matchesAny = editorNodes.some(n => n.id === saved.nodeId);
+      const matchesAny = flowNodesRef.current.some(n => n.id === saved.nodeId);
       if (!matchesAny) return;
-      updateEditorNodeData(saved.nodeId, () => saved.flowNode);
+
+      if (isEditorActive) {
+        updateEditorNodeData(saved.nodeId, () => saved.flowNode);
+      } else if (tab === "generate") {
+        setGenResult(prev => {
+          if (!prev) return prev;
+          const flows = prev.flows.map((flow, idx) => {
+            if (idx !== activeFlowIndex) return flow;
+            return {
+              ...flow,
+              nodes: flow.nodes.map(n => n.id === saved.nodeId ? saved.flowNode : n),
+            };
+          });
+          return { ...prev, flows };
+        });
+      }
       clearSavedNode();
       setNotice("Email updated from editor.");
     }, 1000);
     return () => clearInterval(interval);
-  }, [isEditorActive, editorNodes]);
+  }, [isEditorActive, tab, genResult, activeFlowIndex]);
 
   function resetEditorFlow() {
     setEditorNodes([]); setEditorEdges([]);
@@ -421,6 +475,8 @@ function AppInner() {
         throw new Error(err.error || "Flow generation failed");
       }
       const result = (await generateRes.json()) as GeneratedResult;
+      result.brandLogoUrl = profile.brandLogoUrl;
+      result.brandColor = profile.brandColor;
 
       if (!result.flows || result.flows.length === 0) {
         throw new Error("No flows were generated.");
@@ -549,8 +605,9 @@ function AppInner() {
       <div className="flex h-screen overflow-hidden">
           {/* ── sidebar ── */}
           <aside className="w-[260px] flex-shrink-0 border-r border-border bg-white flex flex-col overflow-y-auto">
-            <div className="px-4 pt-4 pb-2">
-              <h1 className="text-lg font-bold text-slate-900">Flow Gameplan</h1>
+            <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+              <img src="/logo.png" alt="ZHS Ecom" className="h-7 object-contain" />
+              <span className="text-sm font-semibold text-slate-500">Flow Gameplan</span>
             </div>
             <div className="flex-1 p-4 pt-2 flex flex-col gap-3">
               {/* library sidebar */}

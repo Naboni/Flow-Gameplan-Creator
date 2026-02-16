@@ -127,7 +127,11 @@ ${structureDesc}
 ${blueprint.structureNote ? `Note: ${blueprint.structureNote}` : ""}
 
 INSTRUCTIONS:
-1. For each message step, provide a title, channel (email/sms), a copy hint (1-2 sentences describing what the message should say), and a subject line suggestion for emails.
+1. For each message step, provide:
+   - "title": a short node label for the flow chart (e.g., "Welcome Email 1", "SMS Reminder", "Win-Back Email 3"). Keep it brief — this is a card title, not email copy.
+   - "channel": "email" or "sms"
+   - "copyHint": a real email preview text / SMS body preview — write it as if it's the actual message snippet the recipient would see (e.g., "Discover our bestselling collection and enjoy free shipping on your first order"). Do NOT write designer instructions like "Introduce the brand" — write actual customer-facing copy.
+   - "subjectLine": (emails only) a real, compelling email subject line the brand would actually send (e.g., "Welcome to Forcoda — Your Style Journey Starts Here"). Write it as real marketing copy, not an instruction.
 2. For each message step, also provide:
    - "discountCode": { "included": true/false, "description": "short generic note like 'Include a discount code to drive urgency'" (if included) }. Decide strategically which steps should offer discounts — typically later in the flow to create urgency, not in the first touch. Do NOT invent actual discount codes — just indicate whether this step should include one and describe the purpose.
    - "abTest": { "description": "what is being A/B tested" } — only include this for steps where A/B testing adds strategic value (e.g., testing subject lines, formats, approaches). Not every step needs one.

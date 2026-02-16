@@ -7,10 +7,6 @@ type MessageNode = Extract<FlowNode, { type: "message" }>;
 
 type EditorTab = "content" | "overview" | "settings";
 
-function getInitials(name: string): string {
-  return name.split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
-}
-
 const STATUS_OPTIONS: { value: MessageStatus; label: string; color: string }[] = [
   { value: "draft", label: "Draft", color: "bg-slate-400" },
   { value: "manual", label: "Manual", color: "bg-amber-500" },
@@ -94,9 +90,9 @@ export function EmailEditorPage() {
   }
 
   const brandName = payload.brandName || "Brand";
-  const brandInitials = getInitials(brandName);
+  const brandLogoUrl = payload.brandLogoUrl;
   const isEmail = node.channel === "email";
-  const primaryColor = isEmail ? "#6495ED" : "#4CAF50";
+  const primaryColor = payload.brandColor || (isEmail ? "#6495ED" : "#4CAF50");
 
   const tabs: { key: EditorTab; label: string }[] = [
     { key: "content", label: "Message Content" },
@@ -109,12 +105,21 @@ export function EmailEditorPage() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-4">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-            style={{ background: primaryColor }}
-          >
-            {brandInitials}
-          </div>
+          {brandLogoUrl ? (
+            <img
+              src={brandLogoUrl}
+              alt={brandName}
+              className="w-8 h-8 rounded-lg object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold"
+              style={{ background: primaryColor }}
+            >
+              {brandName.slice(0, 1).toUpperCase()}
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-semibold text-slate-800">{emailName || "Untitled Email"}</h1>
             <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500 border border-slate-200 uppercase">
@@ -299,7 +304,7 @@ export function EmailEditorPage() {
                   ) : (
                     <PreviewTemplate
                       brandName={brandName}
-                      brandInitials={brandInitials}
+                      brandLogoUrl={brandLogoUrl}
                       primaryColor={primaryColor}
                       subjectLine={subjectLine || "Your exclusive offer awaits"}
                       previewText={previewText || "Discover what we have in store"}
@@ -484,14 +489,14 @@ function TogglePill({ enabled }: { enabled: boolean }) {
 
 function PreviewTemplate({
   brandName,
-  brandInitials,
+  brandLogoUrl,
   primaryColor,
   subjectLine,
   previewText,
   node,
 }: {
   brandName: string;
-  brandInitials: string;
+  brandLogoUrl?: string;
   primaryColor: string;
   subjectLine: string;
   previewText: string;
@@ -501,12 +506,21 @@ function PreviewTemplate({
     <div className="flex flex-col items-center">
       <div
         className="w-full py-6 flex flex-col items-center gap-2"
-        style={{ background: `linear-gradient(135deg, ${primaryColor}, ${primaryColor}dd)` }}
+        style={{ background: `${primaryColor}18` }}
       >
-        <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white text-lg font-bold">
-          {brandInitials}
-        </div>
-        <h2 className="text-white text-lg font-bold">{brandName}</h2>
+        {brandLogoUrl ? (
+          <img
+            src={brandLogoUrl}
+            alt={brandName}
+            className="h-12 max-w-[140px] object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : (
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-lg font-bold" style={{ background: primaryColor }}>
+            {brandName.slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <h2 className="text-lg font-bold" style={{ color: primaryColor }}>{brandName}</h2>
       </div>
 
       <div className="w-full px-6 py-6 space-y-4">

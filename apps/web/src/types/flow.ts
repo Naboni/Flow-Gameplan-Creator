@@ -51,11 +51,15 @@ export type BrandProfile = {
   brandTone: string;
   competitors: string;
   specialInstructions: string;
+  brandLogoUrl?: string;
+  brandColor?: string;
 };
 
 export type GeneratedResult = {
   planKey: string;
   planName: string;
   brandName: string;
+  brandLogoUrl?: string;
+  brandColor?: string;
   flows: FlowSpec[];
 };

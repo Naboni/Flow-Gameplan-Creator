@@ -7,6 +7,8 @@ export type StoredNodePayload = {
   flowNode: FlowNode;
   brandName?: string;
   brandUrl?: string;
+  brandLogoUrl?: string;
+  brandColor?: string;
   timestamp: number;
 };
 
