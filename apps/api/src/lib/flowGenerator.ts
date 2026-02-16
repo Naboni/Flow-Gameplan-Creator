@@ -16,6 +16,7 @@ type StepContent = {
   utmLinks?: boolean;
   filterConditions?: string;
   implementationNotes?: string;
+  strategy?: { primaryFocus: string; secondaryFocus: string };
 };
 
 type NoteContent = {
@@ -140,13 +141,12 @@ INSTRUCTIONS:
    - "utmLinks": boolean — recommend true (YES) for all marketing messages.
    - "filterConditions": string describing any profile filters for this step (e.g., "Exclude VIP customers", "Only send to engaged subscribers"). Use "NA" if none.
    - "implementationNotes": string with brief implementation hints or special notes for the strategist (e.g., "Use dynamic product block", "Include loyalty points balance").
+   - "strategy": { "primaryFocus": "1-2 sentences about this step's main goal", "secondaryFocus": "1-2 sentences about the supporting approach" }. EVERY message step (both email AND SMS) MUST have a unique strategy explaining its purpose in the flow.
 3. Tailor all content to the brand's voice, products, and audience.
 4. If there's a split, tailor the split condition to the brand (e.g., replace generic "purchase history" with something specific).
 5. Always return "notes" as an empty array []. Objective/focus information should be captured in the "implementationNotes" field of each step instead.
 6. Suggest wait durations between steps (in hours or days). Provide ${Math.max(totalSteps - 1, 1)} wait durations.
-7. ${blueprint.hasSplit
-    ? "Provide a STRATEGY for each branch. Each strategy should have a primaryFocus (1-2 sentences about the main goal of the branch) and a secondaryFocus (1-2 sentences about the supporting approach). Think about what each audience segment needs."
-    : "Provide a STRATEGY for the main flow with primaryFocus and secondaryFocus."}
+7. Each step's strategy should be tailored to that step's role in the flow. For the first step in each branch the strategy should set the overall branch direction. For subsequent steps, it should explain how the step builds on the previous ones.
 8. If the brand profile includes price range, AOV, discount approach, or competitors — use that context to shape the messaging strategy. For example, a premium brand that "never discounts" should focus on value and exclusivity, while one with "regular discounts" can lead with offers. Tailor tone and urgency to the brand tone (e.g., "luxury & refined" vs "bold & energetic").
 9. If special instructions are provided, follow them exactly (e.g., specific discount codes, topics to avoid, promotions to mention).
 
@@ -155,17 +155,17 @@ Return ONLY valid JSON matching this exact schema:
   "flowName": "string",
   "triggerDescription": "string (tailored trigger description)",
   "splitConditionTailored": "string or null",
-  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": false }, "abTest": { "description": "string" } | null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string" }],
-  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": true, "description": "Include a discount to drive urgency" }, "abTest": null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string" }],
-  "notes": [{ "title": "OBJECTIVE/FOCUS:", "body": "string", "attachToStep": number }],
+  "yesSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": false }, "abTest": { "description": "string" } | null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string", "strategy": { "primaryFocus": "string", "secondaryFocus": "string" } }],
+  "noSteps": [{ "title": "string", "channel": "email|sms", "copyHint": "string", "subjectLine": "string|undefined", "discountCode": { "included": true, "description": "Include a discount to drive urgency" }, "abTest": null, "messagingFocus": "string", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "string", "strategy": { "primaryFocus": "string", "secondaryFocus": "string" } }],
+  "notes": [],
   "waitDurations": [{ "value": number, "unit": "hours|days" }],
   "yesStrategy": { "primaryFocus": "string", "secondaryFocus": "string" },
   "noStrategy": { "primaryFocus": "string", "secondaryFocus": "string" }
 }
 
 ${blueprint.hasSplit
-    ? "yesSteps should have the steps for the Yes/purchaser branch. noSteps for the No/non-purchaser branch. yesStrategy is for the Yes branch, noStrategy for the No branch."
-    : "Put all steps in yesSteps. Leave noSteps as an empty array. Put the strategy in yesStrategy. Set noStrategy to null."}`;
+    ? "yesSteps should have the steps for the Yes/purchaser branch. noSteps for the No/non-purchaser branch. yesStrategy/noStrategy are legacy fields — set them to match the first step's strategy in each branch."
+    : "Put all steps in yesSteps. Leave noSteps as an empty array. Set yesStrategy to match the first step's strategy. Set noStrategy to null."}`;
 }
 
 /* ── FlowSpec assembler ── */
@@ -228,7 +228,9 @@ function assembleFlowSpec(
         ...(steps[i].utmLinks != null ? { utmLinks: steps[i].utmLinks } : {}),
         ...(steps[i].filterConditions ? { filterConditions: steps[i].filterConditions } : {}),
         ...(steps[i].implementationNotes ? { implementationNotes: steps[i].implementationNotes } : {}),
-        ...(i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
+        ...(steps[i].strategy
+          ? { strategy: steps[i].strategy }
+          : i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
       };
       nodes.push(msgNode);
       edges.push({ id: nextEdgeId(), from: prevId, to: stepId });
@@ -280,7 +282,9 @@ function assembleFlowSpec(
         ...(step.utmLinks != null ? { utmLinks: step.utmLinks } : {}),
         ...(step.filterConditions ? { filterConditions: step.filterConditions } : {}),
         ...(step.implementationNotes ? { implementationNotes: step.implementationNotes } : {}),
-        ...(i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
+        ...(step.strategy
+          ? { strategy: step.strategy }
+          : i === 0 && content.yesStrategy ? { strategy: content.yesStrategy } : {})
       };
       nodes.push(yesMsg);
       edges.push({
@@ -323,7 +327,9 @@ function assembleFlowSpec(
         ...(noStep.utmLinks != null ? { utmLinks: noStep.utmLinks } : {}),
         ...(noStep.filterConditions ? { filterConditions: noStep.filterConditions } : {}),
         ...(noStep.implementationNotes ? { implementationNotes: noStep.implementationNotes } : {}),
-        ...(i === 0 && content.noStrategy ? { strategy: content.noStrategy } : {})
+        ...(noStep.strategy
+          ? { strategy: noStep.strategy }
+          : i === 0 && content.noStrategy ? { strategy: content.noStrategy } : {})
       };
       nodes.push(noMsg);
       edges.push({
