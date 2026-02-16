@@ -99,7 +99,11 @@ export const welcomeSeriesFixture: FlowSpec = {
       smartSending: true,
       utmLinks: true,
       filterConditions: "NA",
-      implementationNotes: "Keep it under 160 characters. Include a direct referral link."
+      implementationNotes: "Keep it under 160 characters. Include a direct referral link.",
+      strategy: {
+        primaryFocus: "Thank existing customers and turn them into brand advocates.",
+        secondaryFocus: "Drive referrals and upsells through loyalty-based incentives."
+      }
     },
     {
       id: "outcome_yes",
@@ -163,7 +167,11 @@ export const welcomeSeriesFixture: FlowSpec = {
       smartSending: true,
       utmLinks: true,
       filterConditions: "Has not placed order since flow entry",
-      implementationNotes: "SMS drives immediate action. Keep it concise with a direct shop link."
+      implementationNotes: "SMS drives immediate action. Keep it concise with a direct shop link.",
+      strategy: {
+        primaryFocus: "Create final urgency to convert hesitant subscribers before the offer expires.",
+        secondaryFocus: "Use the immediacy of SMS to drive last-minute action with a direct link."
+      }
     },
     {
       id: "outcome_no",

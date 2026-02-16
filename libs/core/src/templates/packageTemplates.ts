@@ -149,8 +149,15 @@ function getMessageContent(
     implementationNotes: stepIndex === 1
       ? "First touch in this sequence. Set appropriate send timing."
       : `Step ${stepIndex} of ${totalSteps}. Ensure proper delay from previous message.`,
-    strategy: isFirstInBranch && strategyEntry
-      ? { primaryFocus: strategyEntry.primary, secondaryFocus: strategyEntry.secondary }
+    strategy: strategyEntry
+      ? {
+          primaryFocus: isFirstInBranch
+            ? strategyEntry.primary
+            : `Step ${stepIndex}: Continue building on the ${flowName.toLowerCase()} strategy through ${focus.toLowerCase()}.`,
+          secondaryFocus: isFirstInBranch
+            ? strategyEntry.secondary
+            : `Leverage previous touchpoints to ${includeDiscount ? "drive urgency and conversion" : "deepen engagement and trust"}.`
+        }
       : undefined
   };
 }
