@@ -1,15 +1,23 @@
-import type { FlowNode, FlowSpec } from "@flow/core";
+import type { FlowNode, FlowSpec, MessageStatus } from "@flow/core";
 
 export type AppTab = "generate" | "viewer" | "editor" | "library";
 export type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
 export type PlanKey = "core-foundation" | "growth-engine" | "full-system" | "custom";
 export type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note" | "strategy";
 
+export type NodeCallbacks = {
+  onPreview?: (nodeId: string) => void;
+  onEdit?: (nodeId: string) => void;
+  onDelete?: (nodeId: string) => void;
+  onStatusChange?: (nodeId: string, status: MessageStatus) => void;
+};
+
 export type AppNodeData = {
   title: string;
   subtitle: string;
   nodeType: FlowNode["type"];
   flowNode: FlowNode;
+  callbacks?: NodeCallbacks;
 };
 
 export type BrandQuestionnaire = {

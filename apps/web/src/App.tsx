@@ -14,13 +14,14 @@ import ReactFlow, {
   type NodeChange,
   type ReactFlowInstance,
 } from "reactflow";
-import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType } from "@flow/core";
+import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType, type MessageStatus } from "@flow/core";
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
 import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2 } from "lucide-react";
 
-import type { AppNodeData, AppTab, BrandProfile, BrandQuestionnaire as BrandQuestionnaireData, GeneratedResult, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
+import type { AppNodeData, AppTab, BrandProfile, BrandQuestionnaire as BrandQuestionnaireData, GeneratedResult, NodeCallbacks, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
+import { storeNodeForEdit, loadSavedNode, clearSavedNode } from "./utils/nodeStore";
 import { API_BASE, EDGE_STYLE, PLAN_OPTIONS, VIEWER_CHOICES, rfContainerWidth } from "./constants";
 import { FlowCanvasNode } from "./components/FlowCanvasNode";
 import { SmartEdge } from "./components/SmartEdge";
@@ -180,8 +181,19 @@ function AppInner() {
     baseNodes, baseEdges, isCanvasActive, handleAutoReposition
   );
 
-  const flowNodes = autoNodes;
   const flowEdges = baseEdges;
+  const nodeCallbacksRef = useRef<NodeCallbacks | null>(null);
+
+  /* Inject callbacks into editor message nodes so FlowCanvasNode can show menus.
+     Uses a ref to avoid circular dependency with callback definitions below. */
+  const flowNodes = useMemo(() => {
+    if (!isEditorActive || !nodeCallbacksRef.current) return autoNodes;
+    const cbs = nodeCallbacksRef.current;
+    return autoNodes.map(n => {
+      if (n.data.flowNode.type !== "message") return n;
+      return { ...n, data: { ...n.data, callbacks: cbs } };
+    });
+  }, [autoNodes, isEditorActive]);
 
   /* Re-fit view after auto-position correction */
   useEffect(() => {
@@ -265,6 +277,71 @@ function AppInner() {
   function updateEditorEdgeLabel(edgeId: string, label: string) {
     setEditorEdges((eds) => eds.map((e) => (e.id === edgeId ? { ...e, label: label || undefined } : e)));
   }
+
+  /* ── email node actions (preview / edit / delete / status) ── */
+
+  const handleNodePreview = useCallback((nodeId: string) => {
+    const node = editorNodes.find(n => n.id === nodeId);
+    if (!node) return;
+    storeNodeForEdit({
+      nodeId,
+      flowNode: node.data.flowNode,
+      brandName: genBrand || genResult?.brandName,
+      brandUrl: genUrl,
+      timestamp: Date.now(),
+    });
+    window.open(`/email-preview/${nodeId}`, "_blank");
+  }, [editorNodes, genBrand, genUrl, genResult]);
+
+  const handleNodeEdit = useCallback((nodeId: string) => {
+    const node = editorNodes.find(n => n.id === nodeId);
+    if (!node) return;
+    storeNodeForEdit({
+      nodeId,
+      flowNode: node.data.flowNode,
+      brandName: genBrand || genResult?.brandName,
+      brandUrl: genUrl,
+      timestamp: Date.now(),
+    });
+    window.open(`/email-editor/${nodeId}`, "_blank");
+  }, [editorNodes, genBrand, genUrl, genResult]);
+
+  const handleNodeDelete = useCallback((nodeId: string) => {
+    setEditorNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEditorEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    setNotice("Node deleted.");
+  }, [selectedNodeId]);
+
+  const handleNodeStatusChange = useCallback((nodeId: string, status: MessageStatus) => {
+    updateEditorNodeData(nodeId, (fn) => {
+      if (fn.type !== "message") return fn;
+      return { ...fn, status };
+    });
+  }, []);
+
+  const nodeCallbacks: NodeCallbacks = useMemo(() => ({
+    onPreview: handleNodePreview,
+    onEdit: handleNodeEdit,
+    onDelete: handleNodeDelete,
+    onStatusChange: handleNodeStatusChange,
+  }), [handleNodePreview, handleNodeEdit, handleNodeDelete, handleNodeStatusChange]);
+  nodeCallbacksRef.current = nodeCallbacks;
+
+  /* Poll for saves from email editor windows */
+  useEffect(() => {
+    if (!isEditorActive) return;
+    const interval = setInterval(() => {
+      const saved = loadSavedNode();
+      if (!saved) return;
+      const matchesAny = editorNodes.some(n => n.id === saved.nodeId);
+      if (!matchesAny) return;
+      updateEditorNodeData(saved.nodeId, () => saved.flowNode);
+      clearSavedNode();
+      setNotice("Email updated from editor.");
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isEditorActive, editorNodes]);
 
   function resetEditorFlow() {
     setEditorNodes([]); setEditorEdges([]);

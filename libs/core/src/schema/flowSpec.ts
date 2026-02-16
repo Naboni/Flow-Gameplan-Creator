@@ -91,11 +91,26 @@ const strategySchema = z.object({
   secondaryFocus: z.string().min(1)
 });
 
+export const messageStatusSchema = z.enum(["draft", "manual", "live"]);
+export type MessageStatus = z.infer<typeof messageStatusSchema>;
+
+const emailContentSchema = z.object({
+  subjectLine: z.string().optional(),
+  previewText: z.string().optional(),
+  senderName: z.string().optional(),
+  senderEmail: z.string().optional(),
+  replyTo: z.string().optional(),
+  bodyHtml: z.string().optional(),
+});
+export type EmailContent = z.infer<typeof emailContentSchema>;
+
 const messageNodeSchema = z.object({
   id: nodeIdSchema,
   type: z.literal("message"),
   channel: channelSchema,
   title: z.string().min(1),
+  status: messageStatusSchema.optional(),
+  emailContent: emailContentSchema.optional(),
   stepIndex: z.number().int().positive().optional(),
   copyHint: z.string().optional(),
   objectiveFocus: objectiveFocusSchema.optional(),
