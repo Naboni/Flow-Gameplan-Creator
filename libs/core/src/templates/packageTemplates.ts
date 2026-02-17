@@ -330,7 +330,7 @@ function createSplitFlow(blueprint: SplitFlowBlueprint, delay: DelayConfig): Flo
       type: "split",
       title: "Conditional Split",
       condition: blueprint.splitCondition,
-      labels: { yes: yesLabel, no: noLabel }
+      labels: [yesLabel, noLabel]
     }
   ];
   const edges: FlowSpec["edges"] = [

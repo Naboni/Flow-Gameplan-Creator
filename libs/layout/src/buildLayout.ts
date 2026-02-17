@@ -42,7 +42,7 @@ export type LayoutOptions = {
 
 const DEFAULT_LAYOUT_OPTIONS: Omit<Required<LayoutOptions>, "positionOverrides" | "nodeSizeOverrides"> = {
   rowSpacing: 44,
-  laneSpacing: 200,
+  laneSpacing: 320,
   sameLaneOffset: 340,
   paddingX: 120,
   paddingY: 80
@@ -56,10 +56,13 @@ const NODE_SIZE_MAP: Record<FlowNode["type"], { width: number; height: number }>
   message: { width: 280, height: 230 },
   outcome: { width: 72, height: 22 },
   note: { width: 320, height: 160 },
-  strategy: { width: 320, height: 200 }
+  strategy: { width: 320, height: 200 },
+  merge: { width: 72, height: 28 }
 };
 
 const MSG_STRATEGY_EXTRA = 200;
+const COLLISION_PAD_X = 32;
+const COLLISION_PASSES = 12;
 
 function getNodeSize(
   node: FlowNode,
@@ -72,49 +75,93 @@ function getNodeSize(
   return base;
 }
 
-function labelSortScore(label?: string): number {
-  const normalized = label?.trim().toLowerCase();
-  if (normalized === "yes") {
-    return 0;
+/**
+ * Get the labels array from a split node safely — handles both
+ * the old {yes,no} object format and the new string[] format.
+ */
+function getSplitLabels(node: FlowNode): string[] {
+  if (node.type !== "split") return [];
+  const raw = (node as Record<string, unknown>).labels;
+  if (Array.isArray(raw)) return raw.filter(l => typeof l === "string" && l.trim()) as string[];
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const yes = typeof obj.yes === "string" ? obj.yes : "Yes";
+    const no = typeof obj.no === "string" ? obj.no : "No";
+    return [yes, no];
   }
-  if (normalized === "no") {
-    return 1;
-  }
-  return 2;
+  return ["Yes", "No"];
 }
 
-function branchLaneOffset(parentNode: FlowNode, edge: FlowEdge): number {
-  if (parentNode.type !== "split") {
-    return 0;
-  }
-  const normalized = edge.label?.trim().toLowerCase();
-  if (normalized === "yes") {
-    return -1;
-  }
-  if (normalized === "no") {
-    return 1;
-  }
-  return 0;
+/**
+ * Given a split node and one of its outgoing edges, return the
+ * index of that edge's branch (0-based). Falls back to alphabetical
+ * ordering of the edge label if no label match is found.
+ */
+function branchIndex(splitNode: FlowNode, edge: FlowEdge, allSplitEdges: FlowEdge[]): number {
+  const labels = getSplitLabels(splitNode);
+  const normalized = labels.map(l => l.trim().toLowerCase());
+  const edgeLabel = (edge.label ?? "").trim().toLowerCase();
+  const idx = normalized.indexOf(edgeLabel);
+  if (idx >= 0) return idx;
+  // fallback: use position in the sorted list of outgoing edges
+  const sorted = [...allSplitEdges].sort((a, b) =>
+    (a.label ?? "").localeCompare(b.label ?? "") || a.to.localeCompare(b.to)
+  );
+  return Math.max(0, sorted.findIndex(e => e.id === edge.id));
 }
 
-function nodeSortPriority(nodeType: FlowNode["type"]): number {
-  const order: FlowNode["type"][] = [
-    "trigger",
-    "profileFilter",
-    "split",
-    "message",
-    "wait",
-    "outcome"
-  ];
-  return order.indexOf(nodeType);
+/**
+ * Compute the lane offset for a split child. For N branches the
+ * offsets are spread symmetrically: e.g. 2 → [-1, +1], 3 → [-1, 0, +1].
+ */
+function branchLaneOffset(splitNode: FlowNode, edge: FlowEdge, allSplitEdges: FlowEdge[]): number {
+  const n = allSplitEdges.length;
+  if (n < 2) return 0;
+  const idx = branchIndex(splitNode, edge, allSplitEdges);
+  if (n === 2) return idx === 0 ? -1 : 1;
+  return idx - (n - 1) / 2;
+}
+
+/**
+ * Post-layout collision sweep. Pushes overlapping nodes apart
+ * **symmetrically** (each pushed half the overlap distance).
+ */
+function resolveCollisions(nodes: PositionedNode[]): PositionedNode[] {
+  const out = nodes.map(n => ({ ...n }));
+  for (let pass = 0; pass < COLLISION_PASSES; pass++) {
+    let moved = false;
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i], b = out[j];
+        // Only check nodes that overlap vertically
+        if (a.y + a.height + 8 <= b.y || b.y + b.height + 8 <= a.y) continue;
+
+        const aCx = a.x + a.width / 2;
+        const bCx = b.x + b.width / 2;
+        const minDist = (a.width + b.width) / 2 + COLLISION_PAD_X;
+        const dist = Math.abs(bCx - aCx);
+        if (dist >= minDist) continue;
+
+        const push = (minDist - dist) / 2;
+        if (aCx <= bCx) {
+          a.x -= push;
+          b.x += push;
+        } else {
+          a.x += push;
+          b.x -= push;
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return out;
 }
 
 export function buildLayout(
   rawSpec: FlowSpec,
   options: LayoutOptions = {}
 ): LayoutResult {
-  /* Accept raw spec without validation so the builder can pass
-     incomplete / in-progress flows that would fail strict schema checks. */
   const spec = rawSpec;
   const resolved = { ...DEFAULT_LAYOUT_OPTIONS, ...options };
 
@@ -136,7 +183,6 @@ export function buildLayout(
     }
   }
 
-  // Build side-node→target map: for each side node, find the node it connects TO
   const sideTargetMap = new Map<string, string>();
   const mainEdges: FlowEdge[] = [];
 
@@ -148,8 +194,8 @@ export function buildLayout(
     }
   }
 
-  /* ── Build adjacency only from main (non-note) edges ── */
-  const nodesById = new Map(spec.nodes.map((node) => [node.id, node]));
+  /* ── Build adjacency ── */
+  const nodesById = new Map(spec.nodes.map(n => [n.id, n]));
   const outgoingByNode = new Map<string, FlowEdge[]>();
   const incomingCount = new Map<string, number>();
 
@@ -159,24 +205,17 @@ export function buildLayout(
   }
 
   for (const edge of mainEdges) {
-    const outgoing = outgoingByNode.get(edge.from);
-    if (outgoing) {
-      outgoing.push(edge);
-    }
+    outgoingByNode.get(edge.from)?.push(edge);
     incomingCount.set(edge.to, (incomingCount.get(edge.to) ?? 0) + 1);
   }
 
-  /* ── Topological sort (main nodes only) ── */
-  const triggerNode = mainNodes.find((node) => node.type === "trigger");
+  /* ── Topological sort ── */
+  const triggerNode = mainNodes.find(n => n.type === "trigger");
   const zeroInDegree = mainNodes
-    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .filter(n => (incomingCount.get(n.id) ?? 0) === 0)
     .sort((a, b) => {
-      if (triggerNode && a.id === triggerNode.id) {
-        return -1;
-      }
-      if (triggerNode && b.id === triggerNode.id) {
-        return 1;
-      }
+      if (triggerNode && a.id === triggerNode.id) return -1;
+      if (triggerNode && b.id === triggerNode.id) return 1;
       return a.id.localeCompare(b.id);
     });
 
@@ -186,103 +225,62 @@ export function buildLayout(
 
   while (queue.length > 0) {
     queue.sort((a, b) => a.id.localeCompare(b.id));
-    const node = queue.shift();
-    if (!node) {
-      break;
-    }
+    const node = queue.shift()!;
     topoOrder.push(node);
 
-    const outgoing = [...(outgoingByNode.get(node.id) ?? [])].sort((a, b) => {
-      const labelDelta = labelSortScore(a.label) - labelSortScore(b.label);
-      if (labelDelta !== 0) {
-        return labelDelta;
-      }
-      if (a.to !== b.to) {
-        return a.to.localeCompare(b.to);
-      }
-      return a.id.localeCompare(b.id);
-    });
-
+    const outgoing = outgoingByNode.get(node.id) ?? [];
     for (const edge of outgoing) {
-      const newIncoming = (localIncoming.get(edge.to) ?? 1) - 1;
-      localIncoming.set(edge.to, newIncoming);
-      if (newIncoming === 0) {
+      const dec = (localIncoming.get(edge.to) ?? 1) - 1;
+      localIncoming.set(edge.to, dec);
+      if (dec === 0) {
         const child = nodesById.get(edge.to);
-        if (child) {
-          queue.push(child);
-        }
+        if (child) queue.push(child);
       }
     }
   }
 
   for (const node of mainNodes) {
-    if (!topoOrder.some((n) => n.id === node.id)) {
-      topoOrder.push(node);
-    }
+    if (!topoOrder.some(n => n.id === node.id)) topoOrder.push(node);
   }
 
-  /* ── Depth & lane assignment (main nodes only) ── */
-  const depthById = new Map<string, number>();
-  const laneCandidatesById = new Map<string, number[]>();
-
-  if (triggerNode) {
-    depthById.set(triggerNode.id, 0);
-    laneCandidatesById.set(triggerNode.id, [0]);
-  }
+  /* ── Lane assignment (accumulate candidates, then average) ──
+     For each outgoing edge, we compute the "wanted lane" for the target:
+       - If source is a split → parentLane + branchOffset
+       - Otherwise           → parentLane (inherit)
+     Nodes with multiple incoming edges (merge points) average all candidates
+     so they return to the center of their converging branches. */
+  const laneCandidates = new Map<string, number[]>();
+  if (triggerNode) laneCandidates.set(triggerNode.id, [0]);
 
   for (const node of topoOrder) {
-    const parentDepth = depthById.get(node.id) ?? 0;
-    const parentLaneCandidates = laneCandidatesById.get(node.id) ?? [0];
-    const parentLaneAverage =
-      parentLaneCandidates.reduce((sum, value) => sum + value, 0) / parentLaneCandidates.length;
-    const outgoing = [...(outgoingByNode.get(node.id) ?? [])].sort((a, b) => {
-      const labelDelta = labelSortScore(a.label) - labelSortScore(b.label);
-      if (labelDelta !== 0) {
-        return labelDelta;
-      }
-      return a.to.localeCompare(b.to);
-    });
+    const candidates = laneCandidates.get(node.id) ?? [0];
+    const parentLane = candidates.reduce((s, v) => s + v, 0) / candidates.length;
+    const outgoing = outgoingByNode.get(node.id) ?? [];
 
     for (const edge of outgoing) {
-      const childNode = nodesById.get(edge.to);
-      if (!childNode) {
-        continue;
-      }
-      const nextDepth = parentDepth + 1;
-      const previousDepth = depthById.get(childNode.id);
-      if (previousDepth === undefined || nextDepth > previousDepth) {
-        depthById.set(childNode.id, nextDepth);
-      }
-      const offset = branchLaneOffset(node, edge);
-      const candidateLane = parentLaneAverage + offset;
-      const existing = laneCandidatesById.get(childNode.id) ?? [];
-      existing.push(candidateLane);
-      laneCandidatesById.set(childNode.id, existing);
-    }
-  }
-
-  const fallbackDepth = topoOrder.length;
-  for (const [index, node] of topoOrder.entries()) {
-    if (!depthById.has(node.id)) {
-      depthById.set(node.id, fallbackDepth + index);
-    }
-    if (!laneCandidatesById.has(node.id)) {
-      laneCandidatesById.set(node.id, [0]);
+      if (!nodesById.has(edge.to) || sideNodeIds.has(edge.to)) continue;
+      const offset = (node.type === "split" && outgoing.length >= 2)
+        ? branchLaneOffset(node, edge, outgoing)
+        : 0;
+      const wanted = parentLane + offset;
+      const existing = laneCandidates.get(edge.to) ?? [];
+      existing.push(wanted);
+      laneCandidates.set(edge.to, existing);
     }
   }
 
   const laneById = new Map<string, number>();
-  for (const [nodeId, candidates] of laneCandidatesById.entries()) {
-    const average = candidates.reduce((sum, value) => sum + value, 0) / candidates.length;
-    laneById.set(nodeId, Math.round(average));
+  for (const node of topoOrder) {
+    const candidates = laneCandidates.get(node.id) ?? [0];
+    laneById.set(node.id, candidates.reduce((s, v) => s + v, 0) / candidates.length);
   }
 
-  /* ── Position main nodes (per-node Y based on parent chain) ── */
+  /* ── Y positioning ── */
   const parentEdgesMap = new Map<string, FlowEdge[]>();
   for (const edge of mainEdges) {
-    const existing = parentEdgesMap.get(edge.to) ?? [];
-    existing.push(edge);
-    parentEdgesMap.set(edge.to, existing);
+    const arr = parentEdgesMap.get(edge.to) ?? [];
+    arr.push(edge);
+    parentEdgesMap.set(edge.to, arr);
   }
 
   const nodeYMap = new Map<string, number>();
@@ -295,180 +293,118 @@ export function buildLayout(
       for (const edge of incoming) {
         const parent = nodesById.get(edge.from);
         if (!parent) continue;
-        const parentY = nodeYMap.get(edge.from) ?? 0;
-        const parentSize = getNodeSize(parent, resolved.nodeSizeOverrides);
-        const gap = parent.type === "split"
-          ? resolved.rowSpacing * 2.25
-          : resolved.rowSpacing;
-        const candidateY = parentY + parentSize.height + gap;
-        if (candidateY > maxY) maxY = candidateY;
+        const pY = nodeYMap.get(edge.from) ?? 0;
+        const pSize = getNodeSize(parent, resolved.nodeSizeOverrides);
+        const gap = parent.type === "split" ? resolved.rowSpacing * 2.25 : resolved.rowSpacing;
+        maxY = Math.max(maxY, pY + pSize.height + gap);
       }
       nodeYMap.set(node.id, maxY);
     }
   }
 
+  /* ── Build positioned nodes ── */
   const positionedNodes: PositionedNode[] = [];
   for (const node of topoOrder) {
     const lane = laneById.get(node.id) ?? 0;
     const size = getNodeSize(node, resolved.nodeSizeOverrides);
-    const laneCenter = lane * resolved.laneSpacing;
-    const rawX = laneCenter - size.width / 2;
+    const cx = lane * resolved.laneSpacing;
     const baseY = nodeYMap.get(node.id) ?? 0;
-    const rawY = node.type === "outcome"
+    const y = node.type === "outcome"
       ? baseY + Math.round(resolved.rowSpacing * 0.75)
-      : baseY;
+      : node.type === "merge"
+        ? baseY + Math.round(resolved.rowSpacing * 0.5)
+        : baseY;
 
     positionedNodes.push({
-      id: node.id,
-      type: node.type,
+      id: node.id, type: node.type,
       title: "title" in node ? node.title : node.type,
-      width: size.width,
-      height: size.height,
-      x: rawX,
-      y: rawY,
-      depth: depthById.get(node.id) ?? 0,
-      lane
+      width: size.width, height: size.height,
+      x: cx - size.width / 2, y,
+      depth: 0, lane
     });
   }
 
-  /* ── Position side nodes (note/strategy): place beside their target ── */
-  const positionedById = new Map(positionedNodes.map((n) => [n.id, n]));
+  /* ── Collision sweep (symmetric push) ── */
+  const deCollided = resolveCollisions(positionedNodes);
+
+  /* ── Side nodes ── */
+  const positionedById = new Map(deCollided.map(n => [n.id, n]));
   const SIDE_LEFT_OFFSET = -380;
   const SIDE_RIGHT_GAP = 60;
 
   for (const sideNode of sideNodes) {
     const targetId = sideTargetMap.get(sideNode.id);
-    const targetPositioned = targetId ? positionedById.get(targetId) : undefined;
+    const target = targetId ? positionedById.get(targetId) : undefined;
     const size = getNodeSize(sideNode, resolved.nodeSizeOverrides);
 
-    if (targetPositioned) {
-      // Place side nodes on the OUTSIDE of their branch
-      const placeRight = targetPositioned.lane > 0;
-
-      const xPos = placeRight
-        ? targetPositioned.x + targetPositioned.width + SIDE_RIGHT_GAP
-        : targetPositioned.x + SIDE_LEFT_OFFSET;
-
-      positionedNodes.push({
-        id: sideNode.id,
-        type: sideNode.type,
+    if (target) {
+      const placeRight = target.lane > 0;
+      deCollided.push({
+        id: sideNode.id, type: sideNode.type,
         title: "title" in sideNode ? sideNode.title : sideNode.type,
-        width: size.width,
-        height: size.height,
-        x: xPos,
-        y: targetPositioned.y,
-        depth: targetPositioned.depth,
-        lane: placeRight ? targetPositioned.lane + 1 : targetPositioned.lane - 1
+        width: size.width, height: size.height,
+        x: placeRight ? target.x + target.width + SIDE_RIGHT_GAP : target.x + SIDE_LEFT_OFFSET,
+        y: target.y,
+        depth: target.depth,
+        lane: placeRight ? target.lane + 1 : target.lane - 1
       });
     } else {
-      // Disconnected side node: place below the last positioned node
-      const maxY = positionedNodes.length > 0
-        ? Math.max(...positionedNodes.map((n) => n.y)) + resolved.rowSpacing
-        : 0;
-      positionedNodes.push({
-        id: sideNode.id,
-        type: sideNode.type,
+      const maxY = deCollided.length > 0 ? Math.max(...deCollided.map(n => n.y)) + resolved.rowSpacing : 0;
+      deCollided.push({
+        id: sideNode.id, type: sideNode.type,
         title: "title" in sideNode ? sideNode.title : sideNode.type,
-        width: size.width,
-        height: size.height,
-        x: 0,
-        y: maxY,
-        depth: 999,
-        lane: 0
+        width: size.width, height: size.height,
+        x: 0, y: maxY, depth: 999, lane: 0
       });
     }
   }
 
-  /* ── Normalize positions ── */
-  const minX = Math.min(...positionedNodes.map((node) => node.x));
-  const minY = Math.min(...positionedNodes.map((node) => node.y));
+  /* ── Normalize to positive coordinates ── */
+  const minX = Math.min(...deCollided.map(n => n.x));
+  const minY = Math.min(...deCollided.map(n => n.y));
 
-  const normalizedNodes = positionedNodes.map((node) => {
-    const defaultPosition = {
+  const normalizedNodes = deCollided.map(node => {
+    const def = {
       x: node.x - minX + resolved.paddingX,
       y: node.y - minY + resolved.paddingY
     };
     const override = resolved.positionOverrides?.[node.id];
-    return {
-      ...node,
-      x: override?.x ?? defaultPosition.x,
-      y: override?.y ?? defaultPosition.y
-    };
+    return { ...node, x: override?.x ?? def.x, y: override?.y ?? def.y };
   });
 
-  const normalizedById = new Map(normalizedNodes.map((node) => [node.id, node]));
+  const normalizedById = new Map(normalizedNodes.map(n => [n.id, n]));
 
   /* ── Route edges ── */
-  const routedEdges: RoutedEdge[] = spec.edges.map((edge) => {
+  const routedEdges: RoutedEdge[] = spec.edges.map(edge => {
     const fromNode = normalizedById.get(edge.from);
     const toNode = normalizedById.get(edge.to);
     if (!fromNode || !toNode) {
+      return { id: edge.id, from: edge.from, to: edge.to, label: edge.label, points: [] };
+    }
+
+    if (sideNodeIds.has(edge.from)) {
       return {
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        points: []
+        id: edge.id, from: edge.from, to: edge.to, label: edge.label,
+        points: [
+          { x: fromNode.x + fromNode.width, y: fromNode.y + fromNode.height / 2 },
+          { x: toNode.x, y: toNode.y + toNode.height / 2 }
+        ]
       };
     }
 
-    // Side-node edges: horizontal from right side to left side of target
-    const isNoteEdge = sideNodeIds.has(edge.from);
-    if (isNoteEdge) {
-      const start: LayoutPoint = {
-        x: fromNode.x + fromNode.width,
-        y: fromNode.y + fromNode.height / 2
-      };
-      const end: LayoutPoint = {
-        x: toNode.x,
-        y: toNode.y + toNode.height / 2
-      };
-      return {
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        points: [start, end]
-      };
-    }
-
-    // Normal edges: top-to-bottom
-    const start: LayoutPoint = {
-      x: fromNode.x + fromNode.width / 2,
-      y: fromNode.y + fromNode.height
-    };
-    const end: LayoutPoint = {
-      x: toNode.x + toNode.width / 2,
-      y: toNode.y
-    };
+    const start = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height };
+    const end = { x: toNode.x + toNode.width / 2, y: toNode.y };
 
     if (Math.abs(start.x - end.x) < 1) {
-      return {
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        label: edge.label,
-        points: [start, end]
-      };
+      return { id: edge.id, from: edge.from, to: edge.to, label: edge.label, points: [start, end] };
     }
 
-    const middleY = start.y + (end.y - start.y) / 2;
+    const midY = start.y + (end.y - start.y) / 2;
     return {
-      id: edge.id,
-      from: edge.from,
-      to: edge.to,
-      label: edge.label,
-      points: [
-        start,
-        { x: start.x, y: middleY },
-        { x: end.x, y: middleY },
-        end
-      ]
+      id: edge.id, from: edge.from, to: edge.to, label: edge.label,
+      points: [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]
     };
   });
 
-  return {
-    nodes: normalizedNodes,
-    edges: routedEdges
-  };
+  return { nodes: normalizedNodes, edges: routedEdges };
 }

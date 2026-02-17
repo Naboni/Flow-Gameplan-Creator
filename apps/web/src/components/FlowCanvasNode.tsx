@@ -13,7 +13,7 @@ import {
 import { useState } from "react";
 
 const STATUS_LABELS: Record<MessageStatus, string> = {
-  draft: "Draft selected",
+  draft: "Draft",
   manual: "Manual",
   live: "Live",
 };
@@ -259,6 +259,19 @@ export function FlowCanvasNode({ data, selected, id }: NodeProps<AppNodeData>) {
           <span className="flow-card__title">Wait {fn.duration.value} {fn.duration.unit}</span>
           {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} />}
         </div>
+        <Handle type="source" position={Position.Bottom} className="flow-handle" />
+      </div>
+    );
+  }
+
+  if (fn.type === "merge") {
+    return (
+      <div className={`flow-merge ${selected ? "flow-merge--selected" : ""}`}>
+        <Handle type="target" position={Position.Top} className="flow-handle" />
+        <Handle type="target" position={Position.Left} id="left" className="flow-handle" />
+        <Handle type="target" position={Position.Right} id="right" className="flow-handle" />
+        <span className="flow-merge__label">Merge</span>
+        {data.callbacks && <NodeDeleteMenu nodeId={id} callbacks={data.callbacks} className="flow-end__menu-btn" />}
         <Handle type="source" position={Position.Bottom} className="flow-handle" />
       </div>
     );

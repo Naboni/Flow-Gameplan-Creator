@@ -60,7 +60,7 @@ export const welcomeSeriesFixture: FlowSpec = {
       type: "split",
       title: "Conditional Split",
       condition: "Has placed an order?",
-      labels: { yes: "Yes", no: "No" }
+      labels: ["Yes", "No"]
     },
 
     /* ── Yes branch (purchasers) ── */

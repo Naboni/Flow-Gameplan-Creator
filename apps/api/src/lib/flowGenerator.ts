@@ -53,7 +53,7 @@ type GeneratedFlowContent = {
 type FlowNode =
   | { id: string; type: "trigger"; title: string; event: string }
   | { id: string; type: "profileFilter"; title: string; filters: string[] }
-  | { id: string; type: "split"; title: string; condition: string; labels: { yes: string; no: string } }
+  | { id: string; type: "split"; title: string; condition: string; labels: string[] }
   | { id: string; type: "wait"; duration: { value: number; unit: "minutes" | "hours" | "days" } }
   | { id: string; type: "message"; channel: "email" | "sms"; title: string; copyHint?: string; discountCode?: { included: boolean; code?: string; description?: string }; abTest?: { description: string }; messagingFocus?: string; smartSending?: boolean; utmLinks?: boolean; filterConditions?: string; implementationNotes?: string; strategy?: { primaryFocus: string; secondaryFocus: string } }
   | { id: string; type: "outcome"; title: string; result: string }
@@ -250,7 +250,7 @@ function assembleFlowSpec(
       type: "split",
       title: "Conditional Split",
       condition: content.splitConditionTailored || blueprint.splitCondition || "Condition",
-      labels: { yes: "Yes", no: "No" }
+      labels: ["Yes", "No"]
     });
     edges.push({ id: nextEdgeId(), from: triggerId, to: splitId });
 

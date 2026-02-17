@@ -28,6 +28,7 @@ export function nodeSubtitle(node: FlowNode): string {
   if (node.type === "trigger") return node.event;
   if (node.type === "note") return node.body;
   if (node.type === "strategy") return node.primaryFocus;
+  if (node.type === "merge") return "Merge point";
   return node.type;
 }
 
@@ -46,10 +47,11 @@ export function createFlowNode(kind: NodeKind): FlowNode {
   if (kind === "email") return { id, type: "message", channel: "email", title: "Email" };
   if (kind === "sms") return { id, type: "message", channel: "sms", title: "SMS" };
   if (kind === "wait") return { id, type: "wait", duration: { value: 1, unit: "days" } };
-  if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: { yes: "Yes", no: "No" } };
+  if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: ["Yes", "No"] };
   if (kind === "profileFilter") return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
   if (kind === "note") return { id, type: "note", title: "OBJECTIVE/FOCUS:", body: "Describe the objective here..." };
   if (kind === "strategy") return { id, type: "strategy", title: "STRATEGY", primaryFocus: "Primary focus...", secondaryFocus: "Secondary focus..." };
+  if (kind === "merge") return { id, type: "merge", title: "Merge" };
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }
 
@@ -93,6 +95,15 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
     for (const n of rfNodes) nodePositionMap.set(n.id, n.position);
   }
 
+  const BRANCH_COLORS = ["#2563eb", "#6b7280", "#7c3aed", "#d97706", "#059669", "#dc2626"];
+  const splitLabelMap = new Map<string, number>();
+  for (const n of spec.nodes) {
+    if (n.type === "split") {
+      const labels: string[] = Array.isArray(n.labels) ? n.labels : ["Yes", "No"];
+      labels.forEach((l, i) => splitLabelMap.set(`${n.id}::${l.trim().toLowerCase()}`, i));
+    }
+  }
+
   return spec.edges.map((e) => {
     const normalizedLabel = typeof e.label === "string" ? e.label.trim().toLowerCase() : "";
     const targetNode = nodeById.get(e.to);
@@ -100,21 +111,19 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
     const edgeBase = isEndTarget
       ? { ...EDGE_STYLE, markerEnd: undefined as unknown as never }
       : EDGE_STYLE;
-    const branchLabelStyle = normalizedLabel === "yes"
-      ? {
-          labelStyle: { fill: "#ffffff", fontWeight: 600, fontSize: 10 },
-          labelBgStyle: { fill: "#2563eb", fillOpacity: 1 },
-          labelBgPadding: [8, 3] as [number, number],
-          labelBgBorderRadius: 10
-        }
-      : normalizedLabel === "no"
-        ? {
-            labelStyle: { fill: "#ffffff", fontWeight: 600, fontSize: 10 },
-            labelBgStyle: { fill: "#6b7280", fillOpacity: 1 },
-            labelBgPadding: [8, 3] as [number, number],
-            labelBgBorderRadius: 10
-          }
-        : {};
+
+    let branchLabelStyle: Record<string, unknown> = {};
+    const sourceNode = nodeById.get(e.from);
+    if (sourceNode?.type === "split" && normalizedLabel) {
+      const idx = splitLabelMap.get(`${e.from}::${normalizedLabel}`) ?? 0;
+      const color = BRANCH_COLORS[idx % BRANCH_COLORS.length];
+      branchLabelStyle = {
+        labelStyle: { fill: "#ffffff", fontWeight: 600, fontSize: 10 },
+        labelBgStyle: { fill: color, fillOpacity: 1 },
+        labelBgPadding: [8, 3] as [number, number],
+        labelBgBorderRadius: 10
+      };
+    }
 
     if (!sideNodeIds.has(e.from)) {
       return { id: e.id, source: e.from, target: e.to, label: e.label, ...edgeBase, ...branchLabelStyle };

@@ -94,6 +94,7 @@ function estimateMiroHeight(
 
   if (specNode.type === "wait") return 52;
   if (specNode.type === "outcome") return 40;
+  if (specNode.type === "merge") return 40;
 
   if (specNode.type === "trigger") {
     return PAD + pHeight(specNode.title ?? "Trigger") + pHeight(specNode.event);
@@ -226,6 +227,7 @@ function recomputeMiroY(
     }
 
     if (node.type === "outcome") maxY += MIRO_END_EXTRA;
+    if (node.type === "merge") maxY += MIRO_END_EXTRA;
     newY.set(id, maxY);
   }
 
@@ -266,6 +268,8 @@ function shapeStyle(nodeType: string, specNode?: FlowSpec["nodes"][number]): Mir
       return { ...base, shape: "round_rectangle", fillColor: "#F3F4F6", borderColor: "#9CA3AF", textAlign: "center", textAlignVertical: "middle" };
     case "outcome":
       return { ...base, shape: "round_rectangle", fillColor: "#ECFDF5", borderColor: "#10B981", textAlign: "center", textAlignVertical: "middle", fontSize: "12" };
+    case "merge":
+      return { ...base, shape: "round_rectangle", fillColor: "#F5F3FF", borderColor: "#8B5CF6", textAlign: "center", textAlignVertical: "middle", fontSize: "12" };
     case "profileFilter":
       return { ...base, shape: "round_rectangle", fillColor: "#FFFBEB", borderColor: "#F59E0B", textAlign: "center", textAlignVertical: "top" };
     case "note":
@@ -307,6 +311,10 @@ function nodeContent(specNode: FlowSpec["nodes"][number]): string {
 
   if (specNode.type === "outcome") {
     return `<p><strong>End</strong></p>`;
+  }
+
+  if (specNode.type === "merge") {
+    return `<p><strong>Merge</strong></p>`;
   }
 
   if (specNode.type === "message") {

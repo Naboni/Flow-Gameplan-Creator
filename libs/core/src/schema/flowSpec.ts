@@ -51,15 +51,20 @@ const profileFilterNodeSchema = z.object({
   filters: z.array(z.string().min(1)).min(1)
 });
 
+const splitLabelsSchema = z.union([
+  z.object({
+    yes: z.string().min(1).default("Yes"),
+    no: z.string().min(1).default("No")
+  }).transform(obj => [obj.yes, obj.no]),
+  z.array(z.string().min(1)).min(2)
+]).default(["Yes", "No"]);
+
 const splitNodeSchema = z.object({
   id: nodeIdSchema,
   type: z.literal("split"),
   title: z.string().min(1),
   condition: z.string().min(1),
-  labels: z.object({
-    yes: z.string().min(1).default("Yes"),
-    no: z.string().min(1).default("No")
-  }).default({ yes: "Yes", no: "No" })
+  labels: splitLabelsSchema
 });
 
 const waitNodeSchema = z.object({
@@ -139,6 +144,12 @@ const noteNodeSchema = z.object({
   body: z.string().min(1)
 });
 
+const mergeNodeSchema = z.object({
+  id: nodeIdSchema,
+  type: z.literal("merge"),
+  title: z.string().min(1).default("Merge")
+});
+
 const strategyNodeSchema = z.object({
   id: nodeIdSchema,
   type: z.literal("strategy"),
@@ -156,7 +167,8 @@ export const flowNodeSchema = z.discriminatedUnion("type", [
   messageNodeSchema,
   outcomeNodeSchema,
   noteNodeSchema,
-  strategyNodeSchema
+  strategyNodeSchema,
+  mergeNodeSchema
 ]);
 export type FlowNode = z.infer<typeof flowNodeSchema>;
 
@@ -233,16 +245,19 @@ export const flowSpecSchema = z.object({
   }
 
   if (splitCount > 0) {
-    const splitIds = new Set(spec.nodes.filter((n) => n.type === "split").map((n) => n.id));
-    for (const splitId of splitIds) {
-      const outgoing = spec.edges.filter((edge) => edge.from === splitId);
-      const labels = new Set(outgoing.map((edge) => edge.label?.toLowerCase()));
-      if (!labels.has("yes") || !labels.has("no")) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Split node ${splitId} must have both Yes and No outgoing edges.`,
-          path: ["edges"]
-        });
+    const splitNodes = spec.nodes.filter((n) => n.type === "split");
+    for (const splitNode of splitNodes) {
+      const outgoing = spec.edges.filter((edge) => edge.from === splitNode.id);
+      const outLabels = new Set(outgoing.map((edge) => edge.label?.trim().toLowerCase()));
+      const requiredLabels = splitNode.labels.map((l: string) => l.trim().toLowerCase());
+      for (const required of requiredLabels) {
+        if (!outLabels.has(required)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Split node ${splitNode.id} is missing outgoing edge with label "${required}".`,
+            path: ["edges"]
+          });
+        }
       }
     }
   }

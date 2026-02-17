@@ -52,18 +52,13 @@ function buildBranchPath(sx: number, sy: number, tx: number, ty: number, r = 8):
   return [path, labelX, labelY];
 }
 
-function isBranchLabel(label: unknown): boolean {
-  if (typeof label !== "string") return false;
-  const normalized = label.trim().toLowerCase();
-  return normalized === "yes" || normalized === "no";
-}
-
 export function SmartEdge(props: EdgeProps) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = props;
 
   const isVerticalFlow = sourcePosition === Position.Bottom && targetPosition === Position.Top;
   const isSameLane = Math.abs(sourceX - targetX) < 5;
-  const isBranch = isBranchLabel(props.label) && !isSameLane;
+  const hasLabel = typeof props.label === "string" && props.label.trim().length > 0;
+  const isBranch = hasLabel && !isSameLane;
 
   let path: string, labelX: number, labelY: number;
 

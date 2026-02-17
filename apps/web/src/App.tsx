@@ -29,6 +29,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LibraryView, FLOW_TYPES } from "./components/LibraryView";
 import { CustomPlanBuilder } from "./components/CustomPlanBuilder";
 import { BrandQuestionnaire } from "./components/BrandQuestionnaire";
+import { ChatPanel, type ChatMessage } from "./components/ChatPanel";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,63 @@ import {
 } from "./utils/flowHelpers";
 import { useAutoPosition } from "./hooks/useAutoPosition";
 
+function asPositiveInt(value: unknown, fallback = 1): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.round(Math.abs(n)));
+}
+
+function normalizeFlowSpecCandidate(input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const spec = structuredClone(input) as Record<string, unknown>;
+
+  if (spec.defaults && typeof spec.defaults === "object") {
+    const defaults = spec.defaults as Record<string, unknown>;
+    if (defaults.delay && typeof defaults.delay === "object") {
+      const delay = defaults.delay as Record<string, unknown>;
+      delay.value = asPositiveInt(delay.value, 2);
+      if (typeof delay.unit !== "string" || !["minutes", "hours", "days"].includes(delay.unit)) {
+        delay.unit = "days";
+      }
+      defaults.delay = delay;
+    }
+    spec.defaults = defaults;
+  }
+
+  if (Array.isArray(spec.nodes)) {
+    spec.nodes = spec.nodes.map((node) => {
+      if (!node || typeof node !== "object") return node;
+      const n = node as Record<string, unknown>;
+      if (n.type === "wait") {
+        const duration = (n.duration && typeof n.duration === "object")
+          ? (n.duration as Record<string, unknown>)
+          : {};
+        duration.value = asPositiveInt(duration.value, 1);
+        if (typeof duration.unit !== "string" || !["minutes", "hours", "days"].includes(duration.unit)) {
+          duration.unit = "days";
+        }
+        n.duration = duration;
+      }
+      if (n.type === "split") {
+        if (Array.isArray(n.labels)) {
+          const labels = n.labels.filter((l) => typeof l === "string" && l.trim().length > 0) as string[];
+          n.labels = labels.length >= 2 ? labels : ["Yes", "No"];
+        } else if (n.labels && typeof n.labels === "object") {
+          const obj = n.labels as Record<string, unknown>;
+          const yes = typeof obj.yes === "string" && obj.yes.trim() ? obj.yes : "Yes";
+          const no = typeof obj.no === "string" && obj.no.trim() ? obj.no : "No";
+          n.labels = [yes, no];
+        } else {
+          n.labels = ["Yes", "No"];
+        }
+      }
+      return n;
+    });
+  }
+
+  return spec;
+}
+
 function AppInner() {
   const [tab, setTab] = useState<AppTab>("generate");
 
@@ -61,6 +119,10 @@ function AppInner() {
   const [genError, setGenError] = useState("");
   const [activeFlowIndex, setActiveFlowIndex] = useState(0);
   const [customTemplateIds, setCustomTemplateIds] = useState<string[]>([]);
+
+  /* chat flow builder */
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
 
   /* library tab */
   const [libraryActiveType, setLibraryActiveType] = useState<FlowType>("email-welcome");
@@ -498,6 +560,67 @@ function AppInner() {
     }
   }
 
+  /* ── chat flow builder ── */
+
+  async function handleChatSend(message: string) {
+    const userMsg: ChatMessage = { role: "user", content: message };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatLoading(true);
+
+    try {
+      const currentFlow = activeGenFlow ?? undefined;
+      const brandProfile = genBrand ? { brandName: genBrand } : undefined;
+      const res = await fetch(`${API_BASE}/api/chat-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: chatMessages.slice(-6),
+          brandProfile,
+          currentFlowSpec: currentFlow
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Chat request failed" }));
+        throw new Error(err.error || "Chat request failed");
+      }
+
+      const data = await res.json() as { reply: string; flowSpec?: unknown; action: string };
+      setChatMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+
+      if (data.flowSpec) {
+        const normalizedSpec = normalizeFlowSpecCandidate(data.flowSpec);
+        const parsed = parseFlowSpecSafe(normalizedSpec);
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          const path = issue?.path?.length ? ` at ${issue.path.join(".")}` : "";
+          const msg = issue?.message ?? "Invalid flow specification from AI.";
+          setChatMessages(prev => [...prev, { role: "assistant", content: `Flow validation failed${path}: ${msg}. Say "regenerate" to try again.` }]);
+          return;
+        }
+        const spec = parsed.data;
+
+        const result: GeneratedResult = {
+          planKey: "chat",
+          planName: "AI Chat Flow",
+          brandName: genBrand || "Custom",
+          brandLogoUrl: genResult?.brandLogoUrl,
+          brandColor: genResult?.brandColor,
+          flows: [spec]
+        };
+        setGenResult(result);
+        setActiveFlowIndex(0);
+        setGenStep("done");
+      }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Something went wrong.";
+      setChatMessages(prev => [...prev, { role: "assistant", content: `Error: ${errMsg}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
   /* ── export / import ── */
 
   function getExportSpec(): FlowSpec {
@@ -862,7 +985,7 @@ function AppInner() {
             </div>
 
             {/* canvas / content */}
-            <div className="flex-1 bg-slate-50" ref={canvasCaptureRef}>
+            <div className="flex-1 bg-slate-50 relative" ref={canvasCaptureRef}>
               {tab === "library" ? (
                 <LibraryView activeType={libraryActiveType} />
               ) : tab === "generate" && genStep !== "done" ? (
@@ -878,7 +1001,7 @@ function AppInner() {
                       <>
                         <h2 className="text-xl font-semibold text-foreground mb-3">Generate a Flow Gameplan</h2>
                         <p className="text-sm text-muted-foreground leading-relaxed">Fill in the client details in the sidebar and click <b>Generate Gameplan</b>.</p>
-                        <p className="text-sm text-muted-foreground leading-relaxed mt-2">The platform will analyze the brand and create a complete set of tailored email/SMS flows.</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed mt-2">Or use the <b>AI Chat</b> below to describe a flow in plain English.</p>
                       </>
                     )}
                   </div>
@@ -906,7 +1029,7 @@ function AppInner() {
                     if (!isEditorActive || !reactFlowRef.current) return;
                     event.preventDefault();
                     const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                    const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy"];
+                    const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy", "merge"];
                     if (!allowed.includes(rawKind as NodeKind)) return;
                     appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
                   }}
@@ -918,6 +1041,14 @@ function AppInner() {
                   <MiniMap pannable zoomable />
                   <Controls />
                 </ReactFlow>
+              )}
+              {tab === "generate" && (
+                <ChatPanel
+                  messages={chatMessages}
+                  onSend={handleChatSend}
+                  loading={chatLoading}
+                  disabled={genBusy}
+                />
               )}
             </div>
           </main>
