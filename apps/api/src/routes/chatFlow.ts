@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getOpenAI } from "../lib/openai.js";
 import type { BrandProfile } from "../lib/brandAnalyzer.js";
+import { validateFlowGraph, type GraphError } from "@flow/core";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -21,6 +22,7 @@ type ChatFlowResponse = {
 };
 
 const HISTORY_MAX_MESSAGES = 6;
+const MAX_REPAIR_ATTEMPTS = 2;
 
 function asPositiveInt(value: unknown, fallback = 1): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -78,10 +80,6 @@ function normalizeFlowSpecCandidate(input: unknown): unknown {
   return spec;
 }
 
-/**
- * Strip a full FlowSpec down to a tiny structural skeleton for context.
- * This keeps tokens low so the model can respond quickly.
- */
 function skeletonizeFlowSpec(spec: unknown): unknown {
   if (!spec || typeof spec !== "object") return spec;
   const s = spec as Record<string, unknown>;
@@ -128,11 +126,6 @@ function skeletonizeFlowSpec(spec: unknown): unknown {
   };
 }
 
-/**
- * Merge AI-generated spec with original rich data.
- * Nodes that exist in the original keep their copyHint, strategy, etc.
- * New nodes from the AI are used as-is.
- */
 function mergeWithOriginal(aiSpec: unknown, original: unknown): unknown {
   if (!aiSpec || typeof aiSpec !== "object") return aiSpec;
   if (!original || typeof original !== "object") return aiSpec;
@@ -177,7 +170,28 @@ Flow node types:
 Edge: { id:"e_from_to", from:"source_id", to:"target_id", label:"optional" }
 Split edges MUST have label matching the split's labels. Node IDs: alphanumeric/underscore/dash only.
 
-RULES:
+STRUCTURAL RULES (CRITICAL — violations will be automatically detected and rejected):
+1. The flow is a directed acyclic graph (DAG). EVERY node must be reachable from the trigger. No orphan nodes.
+2. Every path from the trigger MUST terminate at an outcome node. No dead ends.
+3. Every non-outcome node must have at least one outgoing edge.
+4. When a split creates N branches, each branch MUST have its OWN SEPARATE chain of nodes. Two branches must NEVER point to the same node. Each split branch target must be unique.
+5. When modifying a flow, preserve all existing node IDs and edges that are not being changed. Only add/remove/rewire the parts the user asked to change. Do NOT create disconnected subgraphs.
+6. When the user says "add a split after node X": insert the new split node between X and X's current child. Rewire: X → new_split, then new_split → branch_a (Yes), new_split → branch_b (No), and connect each branch back to an outcome or continue the flow.
+7. When each branch of a split needs its own sub-split, create SEPARATE split nodes for each branch — do NOT merge both branches into one shared split.
+
+EXAMPLE — adding a split after Email_2 with sub-splits:
+Before: Email_2 → Wait_3 → Email_3 → Outcome
+After adding engagement split with sub-splits on each branch:
+  Email_2 → Engagement_Split
+  Engagement_Split →(Yes)→ Engaged_Email → Sub_Split_A
+  Sub_Split_A →(Yes)→ ... → Outcome_1
+  Sub_Split_A →(No)→ ... → Outcome_2
+  Engagement_Split →(No)→ NotEngaged_Email → Sub_Split_B
+  Sub_Split_B →(Yes)→ ... → Outcome_3
+  Sub_Split_B →(No)→ ... → Outcome_4
+Note: Sub_Split_A and Sub_Split_B are SEPARATE nodes. Each branch has its own subtree.
+
+BEHAVIOR RULES:
 - When user describes a flow, first confirm the structure briefly (1-2 sentences), then ask for confirmation.
 - When user confirms (says yes/ok/go/proceed), output the FlowSpec JSON immediately.
 - For modifications, you receive a skeleton of the current flow. Output the COMPLETE updated flow.
@@ -229,6 +243,10 @@ function determineAction(text: string, hasFlowSpec: boolean): ChatFlowResponse["
   return "clarify";
 }
 
+function formatGraphErrors(errors: GraphError[]): string {
+  return errors.map((e, i) => `${i + 1}. [${e.code}] ${e.message}`).join("\n");
+}
+
 export async function chatFlowRoute(req: Request, res: Response) {
   const startedAt = Date.now();
   try {
@@ -259,19 +277,62 @@ export async function chatFlowRoute(req: Request, res: Response) {
 
     console.log(`[chat-flow] calling OpenAI (${messages.length} messages, system=${systemContent.length} chars)...`);
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages,
-      temperature: 0.7,
-      max_tokens: 8192,
-    });
+    let flowSpec: unknown | null = null;
+    let rawReply = "";
+    let hadBlock = false;
+    let totalTokens = 0;
 
-    const rawReply = completion.choices[0]?.message?.content ?? "I couldn't generate a response. Please try again.";
-    const extracted = extractFlowSpec(rawReply);
-    let flowSpec = extracted.flowSpec ? normalizeFlowSpecCandidate(extracted.flowSpec) : null;
+    // Initial call + up to MAX_REPAIR_ATTEMPTS retries
+    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+      const isRetry = attempt > 0;
 
-    if (flowSpec && body.currentFlowSpec) {
-      flowSpec = mergeWithOriginal(flowSpec, body.currentFlowSpec);
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages,
+        temperature: isRetry ? 0.3 : 0.7,
+        max_tokens: 8192,
+      });
+
+      totalTokens += completion.usage?.total_tokens ?? 0;
+      rawReply = completion.choices[0]?.message?.content ?? "I couldn't generate a response. Please try again.";
+      const extracted = extractFlowSpec(rawReply);
+      hadBlock = extracted.hadBlock;
+
+      if (!extracted.flowSpec) {
+        // No JSON block — either a clarification/confirmation or malformed output
+        break;
+      }
+
+      let candidate = normalizeFlowSpecCandidate(extracted.flowSpec);
+      if (candidate && body.currentFlowSpec) {
+        candidate = mergeWithOriginal(candidate, body.currentFlowSpec);
+      }
+
+      // Run graph validation
+      const graphResult = validateFlowGraph(candidate);
+      if (graphResult.valid) {
+        flowSpec = candidate;
+        console.log(`[chat-flow] attempt ${attempt + 1}: graph valid`);
+        break;
+      }
+
+      // Graph validation failed — attempt auto-repair
+      const errorSummary = formatGraphErrors(graphResult.errors);
+      console.log(`[chat-flow] attempt ${attempt + 1}: graph invalid (${graphResult.errors.length} errors):\n${errorSummary}`);
+
+      if (attempt < MAX_REPAIR_ATTEMPTS) {
+        // Feed errors back to AI for repair
+        messages.push({ role: "assistant", content: rawReply });
+        messages.push({
+          role: "user",
+          content: `Your FlowSpec JSON has structural errors that must be fixed:\n${errorSummary}\n\nPlease output the CORRECTED complete FlowSpec JSON fixing all the above errors. Remember: every node must be reachable from the trigger, every path must end at an outcome, and split branches must not share target nodes.`
+        });
+        console.log(`[chat-flow] requesting auto-repair (attempt ${attempt + 2})...`);
+      } else {
+        // Max retries exhausted — return what we have with error info
+        flowSpec = candidate;
+        console.log(`[chat-flow] max repair attempts exhausted, returning with known issues`);
+      }
     }
 
     const reply = cleanReply(rawReply, !!flowSpec);
@@ -279,11 +340,11 @@ export async function chatFlowRoute(req: Request, res: Response) {
 
     const response: ChatFlowResponse = { reply, action, ...(flowSpec ? { flowSpec } : {}) };
 
-    if (!flowSpec && extracted.hadBlock) {
+    if (!flowSpec && hadBlock) {
       response.reply = `${reply}\n\nThe JSON was malformed. Please say "regenerate" and I will output clean JSON.`;
     }
 
-    console.log(`[chat-flow] done in ${Date.now() - startedAt}ms (hasFlowSpec=${!!flowSpec}, tokens=${completion.usage?.total_tokens ?? "?"})`);
+    console.log(`[chat-flow] done in ${Date.now() - startedAt}ms (hasFlowSpec=${!!flowSpec}, totalTokens=${totalTokens})`);
     return res.json(response);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

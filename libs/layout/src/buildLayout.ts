@@ -111,18 +111,6 @@ function branchIndex(splitNode: FlowNode, edge: FlowEdge, allSplitEdges: FlowEdg
 }
 
 /**
- * Compute the lane offset for a split child. For N branches the
- * offsets are spread symmetrically: e.g. 2 → [-1, +1], 3 → [-1, 0, +1].
- */
-function branchLaneOffset(splitNode: FlowNode, edge: FlowEdge, allSplitEdges: FlowEdge[]): number {
-  const n = allSplitEdges.length;
-  if (n < 2) return 0;
-  const idx = branchIndex(splitNode, edge, allSplitEdges);
-  if (n === 2) return idx === 0 ? -1 : 1;
-  return idx - (n - 1) / 2;
-}
-
-/**
  * Post-layout collision sweep. Pushes overlapping nodes apart
  * **symmetrically** (each pushed half the overlap distance).
  */
@@ -243,39 +231,49 @@ export function buildLayout(
     if (!topoOrder.some(n => n.id === node.id)) topoOrder.push(node);
   }
 
-  /* ── Lane assignment (accumulate candidates, then average) ──
-     For each outgoing edge, we compute the "wanted lane" for the target:
-       - If source is a split → parentLane + branchOffset
-       - Otherwise           → parentLane (inherit)
-     Nodes with multiple incoming edges (merge points) average all candidates
-     so they return to the center of their converging branches. */
-  const laneCandidates = new Map<string, number[]>();
-  if (triggerNode) laneCandidates.set(triggerNode.id, [0]);
+  /* ── Subtree-width-aware lane assignment ──
+     1. Build a "tree" from the DAG: each node gets one primary parent.
+     2. Bottom-up: compute how many lane-units each subtree needs.
+     3. Top-down (topo order): allocate horizontal space proportional
+        to subtree width. Merge nodes get averaged across parents. */
+
+  // Step 1: Build tree structure (each node claimed by first parent in topo order)
+  const treeChildren = new Map<string, string[]>();
+  const treeParent = new Map<string, string>();
+  for (const node of topoOrder) treeChildren.set(node.id, []);
 
   for (const node of topoOrder) {
-    const candidates = laneCandidates.get(node.id) ?? [0];
-    const parentLane = candidates.reduce((s, v) => s + v, 0) / candidates.length;
     const outgoing = outgoingByNode.get(node.id) ?? [];
-
-    for (const edge of outgoing) {
-      if (!nodesById.has(edge.to) || sideNodeIds.has(edge.to)) continue;
-      const offset = (node.type === "split" && outgoing.length >= 2)
-        ? branchLaneOffset(node, edge, outgoing)
-        : 0;
-      const wanted = parentLane + offset;
-      const existing = laneCandidates.get(edge.to) ?? [];
-      existing.push(wanted);
-      laneCandidates.set(edge.to, existing);
+    const sorted = node.type === "split" && outgoing.length >= 2
+      ? [...outgoing].sort((a, b) => branchIndex(node, a, outgoing) - branchIndex(node, b, outgoing))
+      : outgoing;
+    for (const edge of sorted) {
+      if (sideNodeIds.has(edge.to) || treeParent.has(edge.to)) continue;
+      if (!nodesById.has(edge.to)) continue;
+      treeParent.set(edge.to, node.id);
+      treeChildren.get(node.id)!.push(edge.to);
     }
   }
 
-  const laneById = new Map<string, number>();
-  for (const node of topoOrder) {
-    const candidates = laneCandidates.get(node.id) ?? [0];
-    laneById.set(node.id, candidates.reduce((s, v) => s + v, 0) / candidates.length);
+  // Step 2: Bottom-up subtree width (reverse topo = leaves first)
+  const subtreeWidth = new Map<string, number>();
+  for (let i = topoOrder.length - 1; i >= 0; i--) {
+    const node = topoOrder[i];
+    const children = treeChildren.get(node.id) ?? [];
+    if (children.length === 0) {
+      subtreeWidth.set(node.id, 1);
+    } else if (node.type === "split" && children.length >= 2) {
+      subtreeWidth.set(node.id, children.reduce((sum, cid) => sum + (subtreeWidth.get(cid) ?? 1), 0));
+    } else {
+      subtreeWidth.set(node.id, Math.max(...children.map(cid => subtreeWidth.get(cid) ?? 1)));
+    }
   }
 
-  /* ── Y positioning ── */
+  // Step 3: Top-down lane assignment
+  const laneById = new Map<string, number>();
+  if (triggerNode) laneById.set(triggerNode.id, 0);
+
+  // Build incoming-edges map for merge detection
   const parentEdgesMap = new Map<string, FlowEdge[]>();
   for (const edge of mainEdges) {
     const arr = parentEdgesMap.get(edge.to) ?? [];
@@ -283,6 +281,53 @@ export function buildLayout(
     parentEdgesMap.set(edge.to, arr);
   }
 
+  for (const node of topoOrder) {
+    // Merge points: average all parent lanes
+    const incomingEdges = (parentEdgesMap.get(node.id) ?? []).filter(e => !sideNodeIds.has(e.from));
+    if (incomingEdges.length > 1) {
+      const parentLanes = incomingEdges
+        .map(e => laneById.get(e.from))
+        .filter((l): l is number => l !== undefined);
+      if (parentLanes.length > 0) {
+        laneById.set(node.id, parentLanes.reduce((s, v) => s + v, 0) / parentLanes.length);
+      }
+    }
+
+    if (!laneById.has(node.id)) laneById.set(node.id, 0);
+    const myLane = laneById.get(node.id)!;
+    const children = treeChildren.get(node.id) ?? [];
+
+    if (node.type === "split" && children.length >= 2) {
+      // Sort children by their branch label order
+      const outgoing = outgoingByNode.get(node.id) ?? [];
+      const sortedChildren = [...children].sort((a, b) => {
+        const aEdge = outgoing.find(e => e.to === a);
+        const bEdge = outgoing.find(e => e.to === b);
+        if (!aEdge || !bEdge) return 0;
+        return branchIndex(node, aEdge, outgoing) - branchIndex(node, bEdge, outgoing);
+      });
+
+      const widths = sortedChildren.map(cid => subtreeWidth.get(cid) ?? 1);
+      const totalWidth = widths.reduce((s, w) => s + w, 0);
+      let currentLeft = myLane - totalWidth / 2;
+
+      for (let i = 0; i < sortedChildren.length; i++) {
+        laneById.set(sortedChildren[i], currentLeft + widths[i] / 2);
+        currentLeft += widths[i];
+      }
+    } else {
+      for (const childId of children) {
+        laneById.set(childId, myLane);
+      }
+    }
+  }
+
+  // Fill any missing lanes
+  for (const node of topoOrder) {
+    if (!laneById.has(node.id)) laneById.set(node.id, 0);
+  }
+
+  /* ── Y positioning (reuses parentEdgesMap from lane assignment) ── */
   const nodeYMap = new Map<string, number>();
   for (const node of topoOrder) {
     const incoming = parentEdgesMap.get(node.id) ?? [];

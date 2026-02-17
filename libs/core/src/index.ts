@@ -4,3 +4,4 @@ export * from "./templates/packageTemplates.js";
 export * from "./editor/editorOps.js";
 export * from "./plans/planRegistry.js";
 export * from "./library/flowTemplate.js";
+export * from "./validation/graphValidator.js";

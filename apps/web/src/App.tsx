@@ -14,7 +14,7 @@ import ReactFlow, {
   type NodeChange,
   type ReactFlowInstance,
 } from "reactflow";
-import { parseFlowSpecSafe, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType, type MessageStatus } from "@flow/core";
+import { parseFlowSpecSafe, validateFlowGraph, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType, type MessageStatus } from "@flow/core";
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
@@ -591,6 +591,15 @@ function AppInner() {
 
       if (data.flowSpec) {
         const normalizedSpec = normalizeFlowSpecCandidate(data.flowSpec);
+
+        // Graph structural validation (safety net — backend already retries)
+        const graphResult = validateFlowGraph(normalizedSpec);
+        if (!graphResult.valid) {
+          const issues = graphResult.errors.map(e => e.message).join("; ");
+          setChatMessages(prev => [...prev, { role: "assistant", content: `The flow has structural issues: ${issues}. Say "fix" or "regenerate" to try again.` }]);
+          return;
+        }
+
         const parsed = parseFlowSpecSafe(normalizedSpec);
         if (!parsed.success) {
           const issue = parsed.error.issues[0];
