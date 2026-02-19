@@ -21,16 +21,9 @@ export type AppNodeData = {
 };
 
 export type BrandQuestionnaire = {
-  businessType?: string;
-  businessStage?: string;
-  emailListSize?: string;
-  priceRange?: string;
-  averageOrderValue?: string;
-  discountApproach?: string;
-  keyDifferentiators?: string[];
-  brandTone?: string;
-  competitors?: string;
+  discountNotes?: string;
   specialInstructions?: string;
+  filloutResponses?: Record<string, string>;
 };
 
 export type BrandProfile = {

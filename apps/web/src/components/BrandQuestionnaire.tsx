@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, ChevronRight, Check, Square, CheckSquare } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import type { BrandQuestionnaire as BrandQuestionnaireData } from "@/types/flow";
+import { API_BASE } from "@/constants";
 
 type Props = {
   open: boolean;
@@ -14,326 +15,169 @@ type Props = {
   onSave: (data: BrandQuestionnaireData) => void;
 };
 
-const BUSINESS_TYPES = [
-  "Skincare / Beauty",
-  "Health / Supplements",
-  "Fashion / Apparel",
-  "Food & Beverage",
-  "Home & Living",
-  "Fitness / Sports",
-  "Pets",
-  "Tech / Electronics",
-  "Jewelry / Accessories",
-  "Kids / Baby",
-  "Other",
-];
-
-const BUSINESS_STAGES = ["New (under 1 year)", "Growing (1–3 years)", "Established (3+ years)"];
-const LIST_SIZES = ["Just starting", "Under 5K", "5K–25K", "25K–100K", "100K+"];
-
-const DISCOUNT_APPROACHES = ["Never discount", "Rare discounts (holidays only)", "Regular discounts", "Aggressive (always running offers)"];
-
-const DIFFERENTIATORS: Record<string, string[]> = {
-  default: [
-    "Quality / Premium materials",
-    "Price / Value",
-    "Sustainability / Eco",
-    "Fast shipping",
-    "Unique / Handmade",
-    "Science-backed",
-    "Community / Lifestyle",
-    "Satisfaction guarantee",
-  ],
-  "Health / Supplements": [
-    "Science-backed / Clinically tested",
-    "All-natural / Organic ingredients",
-    "Subscription convenience",
-    "Fast results",
-    "Third-party tested",
-    "Unique formulation",
-    "Community / Lifestyle",
-    "Money-back guarantee",
-  ],
-  "Fashion / Apparel": [
-    "Sustainable / Ethical production",
-    "Premium materials / Craftsmanship",
-    "Size inclusivity",
-    "Trendy / Fashion-forward",
-    "Price / Value",
-    "Made locally",
-    "Community / Lifestyle",
-    "Easy returns",
-  ],
-  "Food & Beverage": [
-    "Organic / All-natural",
-    "Unique flavors / Recipes",
-    "Dietary-specific (vegan, keto, etc.)",
-    "Locally sourced",
-    "Subscription convenience",
-    "Price / Value",
-    "Family-owned",
-    "Satisfaction guarantee",
-  ],
-};
-
-const BRAND_TONES = [
-  "Friendly & casual",
-  "Professional & trustworthy",
-  "Bold & energetic",
-  "Luxury & refined",
-  "Playful & quirky",
-  "Educational & authoritative",
-];
-
-function RadioGroup({ options, value, onChange, suffix }: { options: string[]; value?: string; onChange: (v: string) => void; suffix?: React.ReactNode }) {
-  return (
-    <div className="grid gap-2">
-      {options.map((opt) => (
-        <div
-          key={opt}
-          role="radio"
-          aria-checked={value === opt}
-          tabIndex={0}
-          onClick={() => onChange(opt)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onChange(opt); } }}
-          className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 cursor-pointer transition-colors text-sm select-none ${
-            value === opt ? "border-blue-500 bg-blue-50 text-blue-900" : "border-gray-200 hover:border-gray-300 bg-white"
-          }`}
-        >
-          <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-            value === opt ? "border-blue-500" : "border-gray-300"
-          }`}>
-            {value === opt && <div className="w-2 h-2 rounded-full bg-blue-500" />}
-          </div>
-          {opt}
-        </div>
-      ))}
-      {suffix}
-    </div>
-  );
-}
-
-function CheckboxGroup({ options, value, onChange, max }: { options: string[]; value: string[]; onChange: (v: string[]) => void; max: number }) {
-  const toggle = (opt: string) => {
-    if (value.includes(opt)) {
-      onChange(value.filter((v) => v !== opt));
-    } else if (value.length < max) {
-      onChange([...value, opt]);
-    }
-  };
-
-  return (
-    <div className="grid gap-2">
-      {options.map((opt) => {
-        const checked = value.includes(opt);
-        const isDisabled = !checked && value.length >= max;
-        return (
-          <div
-            key={opt}
-            role="checkbox"
-            aria-checked={checked}
-            tabIndex={0}
-            onClick={() => { if (!isDisabled || checked) toggle(opt); }}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!isDisabled || checked) toggle(opt); } }}
-            className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 cursor-pointer transition-colors text-sm select-none ${
-              checked ? "border-blue-500 bg-blue-50 text-blue-900" : isDisabled ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 hover:border-gray-300 bg-white"
-            }`}
-          >
-            {checked
-              ? <CheckSquare className="w-4 h-4 text-blue-500 shrink-0" />
-              : <Square className={`w-4 h-4 shrink-0 ${isDisabled ? "text-gray-300" : "text-gray-400"}`} />
-            }
-            {opt}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function getOptionsForType(map: Record<string, string[]>, businessType?: string): string[] {
-  if (businessType && map[businessType]) return map[businessType];
-  return map.default;
-}
+const FILLOUT_FORM_STORAGE = "fillout_form_id";
 
 export function BrandQuestionnaire({ open, onOpenChange, data, onSave }: Props) {
-  const [step, setStep] = useState(0);
   const [form, setForm] = useState<BrandQuestionnaireData>({ ...data });
-  const [customBusinessType, setCustomBusinessType] = useState(
-    data.businessType && !BUSINESS_TYPES.includes(data.businessType) ? data.businessType : ""
-  );
-
-  const update = <K extends keyof BrandQuestionnaireData>(key: K, val: BrandQuestionnaireData[K]) => {
-    setForm((prev) => ({ ...prev, [key]: val }));
-  };
-
-  const handleBusinessTypeChange = (val: string) => {
-    if (val === "Other") {
-      update("businessType", customBusinessType || "Other");
-    } else {
-      update("businessType", val);
-      setCustomBusinessType("");
-    }
-  };
-
-  const handleCustomTypeInput = (val: string) => {
-    setCustomBusinessType(val);
-    update("businessType", val || "Other");
-  };
-
-  const selectedTypeIsOther = form.businessType === "Other" || (form.businessType !== undefined && !BUSINESS_TYPES.includes(form.businessType));
-  const effectiveBusinessType = selectedTypeIsOther ? undefined : form.businessType;
+  const [filloutOpen, setFilloutOpen] = useState(false);
+  const [filloutFormId, setFilloutFormId] = useState(() => localStorage.getItem(FILLOUT_FORM_STORAGE) ?? "");
+  const [filloutSearch, setFilloutSearch] = useState("");
+  const [filloutLoading, setFilloutLoading] = useState(false);
+  const [filloutStatus, setFilloutStatus] = useState<"idle" | "success" | "error">("idle");
+  const [filloutError, setFilloutError] = useState("");
 
   const handleSave = () => {
+    if (filloutFormId) localStorage.setItem(FILLOUT_FORM_STORAGE, filloutFormId);
     onSave(form);
     onOpenChange(false);
   };
 
-  const steps = [
-    {
-      title: "About the Business",
-      description: "What kind of business is this?",
-      content: (
-        <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-1 pb-2">
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Business Type / Niche</Label>
-            <RadioGroup
-              options={BUSINESS_TYPES}
-              value={selectedTypeIsOther ? "Other" : form.businessType}
-              onChange={handleBusinessTypeChange}
-              suffix={
-                selectedTypeIsOther && (
-                  <Input
-                    autoFocus
-                    placeholder="e.g. Outdoor gear, Pet food, SaaS..."
-                    value={customBusinessType}
-                    onChange={(e) => handleCustomTypeInput(e.target.value)}
-                    className="mt-1"
-                  />
-                )
-              }
-            />
-          </div>
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Business Stage</Label>
-            <RadioGroup options={BUSINESS_STAGES} value={form.businessStage} onChange={(v) => update("businessStage", v)} />
-          </div>
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Email List Size</Label>
-            <RadioGroup options={LIST_SIZES} value={form.emailListSize} onChange={(v) => update("emailListSize", v)} />
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "Brand Identity",
-      description: "How does the brand position itself?",
-      content: (
-        <div className="space-y-5 max-h-[55vh] overflow-y-auto pr-1 pb-2">
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Discount Approach</Label>
-            <RadioGroup options={DISCOUNT_APPROACHES} value={form.discountApproach} onChange={(v) => update("discountApproach", v)} />
-          </div>
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">
-              Key Differentiators <span className="text-gray-400 font-normal">(pick up to 3)</span>
-            </Label>
-            <CheckboxGroup
-              options={getOptionsForType(DIFFERENTIATORS, effectiveBusinessType)}
-              value={form.keyDifferentiators || []}
-              onChange={(v) => update("keyDifferentiators", v)}
-              max={3}
-            />
-          </div>
-          <div>
-            <Label className="text-sm font-semibold mb-2 block">Brand Tone</Label>
-            <RadioGroup options={BRAND_TONES} value={form.brandTone} onChange={(v) => update("brandTone", v)} />
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "Additional Context",
-      description: "Optional details to fine-tune the flows",
-      content: (
-        <div className="space-y-5 pb-2">
-          <div>
-            <Label htmlFor="competitors" className="text-sm font-semibold mb-2 block">
-              Top Competitors <span className="text-gray-400 font-normal">(optional)</span>
-            </Label>
-            <Input
-              id="competitors"
-              placeholder="e.g. Glossier, The Ordinary, Drunk Elephant"
-              value={form.competitors || ""}
-              onChange={(e) => update("competitors", e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="instructions" className="text-sm font-semibold mb-2 block">
-              Special Instructions <span className="text-gray-400 font-normal">(optional)</span>
-            </Label>
-            <Textarea
-              id="instructions"
-              placeholder="e.g. mention our current BOGO sale, avoid aggressive urgency language, use discount code WELCOME10..."
-              rows={4}
-              value={form.specialInstructions || ""}
-              onChange={(e) => update("specialInstructions", e.target.value)}
-            />
-          </div>
-        </div>
-      ),
-    },
-  ];
+  const handleFilloutFetch = async () => {
+    if (!filloutFormId) return;
+    setFilloutLoading(true);
+    setFilloutStatus("idle");
+    setFilloutError("");
+
+    try {
+      localStorage.setItem(FILLOUT_FORM_STORAGE, filloutFormId);
+
+      const res = await fetch(`${API_BASE}/api/fillout-lookup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formId: filloutFormId,
+          ...(filloutSearch.trim() ? { search: filloutSearch.trim() } : {}),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Fetch failed" }));
+        throw new Error(err.error || "Failed to fetch from Fillout");
+      }
+
+      const result = await res.json() as { responses: Record<string, string> };
+      setForm(prev => ({ ...prev, filloutResponses: result.responses }));
+      setFilloutStatus("success");
+    } catch (err) {
+      setFilloutError(err instanceof Error ? err.message : "Unknown error");
+      setFilloutStatus("error");
+    } finally {
+      setFilloutLoading(false);
+    }
+  };
 
   const answeredCount = [
-    form.businessType,
-    form.businessStage,
-    form.emailListSize,
-    form.discountApproach,
-    form.keyDifferentiators?.length ? "yes" : undefined,
-    form.brandTone,
+    form.discountNotes?.trim(),
+    form.specialInstructions?.trim(),
   ].filter(Boolean).length;
 
-  const currentStep = steps[step];
+  const hasFillout = form.filloutResponses && Object.keys(form.filloutResponses).length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>{currentStep.title}</DialogTitle>
-          <DialogDescription>{currentStep.description}</DialogDescription>
+          <DialogTitle>Brand Details</DialogTitle>
+          <DialogDescription>
+            Discount info and special instructions for the AI. Everything else is inferred from the website.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 pb-1">
-          {steps.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1.5 flex-1 rounded-full transition-colors ${
-                i <= step ? "bg-blue-500" : "bg-gray-200"
-              }`}
+        <div className="space-y-5 max-h-[60vh] overflow-y-auto px-1 pb-2">
+          <div>
+            <Label htmlFor="discountNotes" className="text-sm font-semibold mb-2 block">
+              Discount Details
+            </Label>
+            <Textarea
+              id="discountNotes"
+              placeholder={"Specify discounts per flow, e.g.:\n• Welcome flow: 10% off code WELCOME10\n• Abandoned cart: free shipping\n• Post-purchase: no discount"}
+              rows={4}
+              value={form.discountNotes ?? ""}
+              onChange={(e) => setForm(prev => ({ ...prev, discountNotes: e.target.value }))}
             />
-          ))}
-          <span className="text-xs text-gray-400 ml-1">{step + 1}/{steps.length}</span>
+          </div>
+
+          <div>
+            <Label htmlFor="specialInstructions" className="text-sm font-semibold mb-2 block">
+              Special Instructions <span className="text-gray-400 font-normal">(optional)</span>
+            </Label>
+            <Textarea
+              id="specialInstructions"
+              placeholder="e.g. avoid aggressive urgency language, mention current BOGO sale, brand voice is warm and casual..."
+              rows={3}
+              value={form.specialInstructions ?? ""}
+              onChange={(e) => setForm(prev => ({ ...prev, specialInstructions: e.target.value }))}
+            />
+          </div>
+
+          {/* Fillout import section */}
+          <div className="border rounded-lg">
+            <button
+              type="button"
+              onClick={() => setFilloutOpen(!filloutOpen)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors rounded-lg"
+            >
+              <span className="flex items-center gap-2">
+                Import from Fillout
+                {hasFillout && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    {Object.keys(form.filloutResponses!).length} fields loaded
+                  </span>
+                )}
+              </span>
+              {filloutOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+
+            {filloutOpen && (
+              <div className="px-4 pb-4 space-y-3 border-t">
+                <p className="text-xs text-gray-500 pt-3">
+                  Pull onboarding form data from Fillout. API key is configured on the server.
+                </p>
+                <div>
+                  <Label className="text-xs mb-1 block">Form ID</Label>
+                  <Input
+                    placeholder="e.g. abc123def"
+                    value={filloutFormId}
+                    onChange={(e) => setFilloutFormId(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Search by name or email (optional)"
+                    value={filloutSearch}
+                    onChange={(e) => setFilloutSearch(e.target.value)}
+                    className="text-sm flex-1"
+                    onKeyDown={(e) => { if (e.key === "Enter") handleFilloutFetch(); }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleFilloutFetch}
+                    disabled={filloutLoading || !filloutFormId}
+                  >
+                    {filloutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Fetch"}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Leave search empty to fetch the latest submission.
+                </p>
+                {filloutStatus === "success" && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Loaded {Object.keys(form.filloutResponses ?? {}).length} fields from onboarding form
+                  </p>
+                )}
+                {filloutStatus === "error" && (
+                  <p className="text-xs text-red-600">{filloutError}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {currentStep.content}
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          {step > 0 && (
-            <Button variant="outline" onClick={() => setStep(step - 1)}>
-              <ChevronLeft className="w-4 h-4 mr-1" /> Back
-            </Button>
-          )}
-          <div className="flex-1" />
-          {step < steps.length - 1 ? (
-            <Button onClick={() => setStep(step + 1)}>
-              Next <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          ) : (
-            <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700">
-              <Check className="w-4 h-4 mr-1" /> Save ({answeredCount}/6 answered)
-            </Button>
-          )}
+        <DialogFooter>
+          <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700">
+            <Check className="w-4 h-4 mr-1" /> Save{answeredCount > 0 || hasFillout ? ` (${answeredCount}/2${hasFillout ? " + Fillout" : ""})` : ""}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

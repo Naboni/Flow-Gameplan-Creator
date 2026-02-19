@@ -151,13 +151,11 @@ function AppInner() {
   const edgeTypes = useMemo(() => ({ smartEdge: SmartEdge }), []);
 
   const questionnaireAnsweredCount = [
-    questionnaireData.businessType,
-    questionnaireData.businessStage,
-    questionnaireData.emailListSize,
-    questionnaireData.discountApproach,
-    questionnaireData.keyDifferentiators?.length ? "yes" : undefined,
-    questionnaireData.brandTone,
+    questionnaireData.discountNotes?.trim(),
+    questionnaireData.specialInstructions?.trim(),
   ].filter(Boolean).length;
+
+  const hasFilloutData = questionnaireData.filloutResponses && Object.keys(questionnaireData.filloutResponses).length > 0;
 
   /* ── computed specs and nodes ── */
 
@@ -506,7 +504,7 @@ function AppInner() {
     setGenStep("analyzing");
 
     try {
-      const hasQuestionnaire = questionnaireAnsweredCount > 0;
+      const hasQuestionnaire = questionnaireAnsweredCount > 0 || hasFilloutData;
       const analyzeRes = await fetch(`${API_BASE}/api/analyze-brand`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -847,19 +845,21 @@ function AppInner() {
                         onClick={() => setQuestionnaireOpen(true)}
                         disabled={genBusy}
                       >
-                        {questionnaireAnsweredCount > 0 ? (
+                        {questionnaireAnsweredCount > 0 || hasFilloutData ? (
                           <>
                             <CheckCircle2 className="w-4 h-4 mr-1.5 text-green-600" />
-                            <span className="text-green-700">{questionnaireAnsweredCount}/6 answered</span>
+                            <span className="text-green-700">
+                              {questionnaireAnsweredCount}/2{hasFilloutData ? " + Fillout" : ""}
+                            </span>
                           </>
                         ) : (
                           <>
                             <ClipboardList className="w-4 h-4 mr-1.5" />
-                            Fill brand questionnaire
+                            Brand details
                           </>
                         )}
                       </Button>
-                      <p className="text-xs text-muted-foreground">Quick questions to improve AI output quality.</p>
+                      <p className="text-xs text-muted-foreground">Discount info & special instructions for the AI.</p>
                     </div>
 
                     <Button className="mt-1" onClick={handleGenerate} disabled={genBusy}>

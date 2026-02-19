@@ -11,6 +11,7 @@ import {
   deleteTemplateRoute,
 } from "./routes/library.js";
 import { chatFlowRoute } from "./routes/chatFlow.js";
+import { filloutLookupRoute } from "./routes/fillout.js";
 import { seedLibraryIfEmpty } from "./lib/librarySeed.js";
 
 const app = express();
@@ -26,6 +27,7 @@ app.get("/api/health", (_req, res) => {
 app.post("/api/analyze-brand", analyzeBrandRoute);
 app.post("/api/generate-flows", generateFlowsRoute);
 app.post("/api/chat-flow", chatFlowRoute);
+app.post("/api/fillout-lookup", filloutLookupRoute);
 
 app.get("/api/library", listAllTemplates);
 app.get("/api/library/:flowType", listTemplatesByType);

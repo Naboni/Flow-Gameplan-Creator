@@ -2,16 +2,9 @@ import * as cheerio from "cheerio";
 import { getOpenAI } from "./openai.js";
 
 export type BrandQuestionnaire = {
-  businessType?: string;
-  businessStage?: string;
-  emailListSize?: string;
-  priceRange?: string;
-  averageOrderValue?: string;
-  discountApproach?: string;
-  keyDifferentiators?: string[];
-  brandTone?: string;
-  competitors?: string;
+  discountNotes?: string;
   specialInstructions?: string;
+  filloutResponses?: Record<string, string>;
 };
 
 export type BrandProfile = {
@@ -366,16 +359,14 @@ async function crawlSite(url: string): Promise<CrawlResult> {
 
 function formatQuestionnaire(q: BrandQuestionnaire): string {
   const lines: string[] = [];
-  if (q.businessType) lines.push(`- Business type: ${q.businessType}`);
-  if (q.businessStage) lines.push(`- Business stage: ${q.businessStage}`);
-  if (q.emailListSize) lines.push(`- Email list size: ${q.emailListSize}`);
-  if (q.priceRange) lines.push(`- Price range: ${q.priceRange}`);
-  if (q.averageOrderValue) lines.push(`- Average order value: ${q.averageOrderValue}`);
-  if (q.discountApproach) lines.push(`- Discount approach: ${q.discountApproach}`);
-  if (q.keyDifferentiators?.length) lines.push(`- Key differentiators: ${q.keyDifferentiators.join(", ")}`);
-  if (q.brandTone) lines.push(`- Brand tone: ${q.brandTone}`);
-  if (q.competitors) lines.push(`- Top competitors: ${q.competitors}`);
-  if (q.specialInstructions) lines.push(`- Special instructions: ${q.specialInstructions}`);
+  if (q.discountNotes?.trim()) lines.push(`- Discount details: ${q.discountNotes.trim()}`);
+  if (q.specialInstructions?.trim()) lines.push(`- Special instructions: ${q.specialInstructions.trim()}`);
+  if (q.filloutResponses && Object.keys(q.filloutResponses).length > 0) {
+    lines.push("- Onboarding form data:");
+    for (const [key, val] of Object.entries(q.filloutResponses)) {
+      if (val?.trim()) lines.push(`  • ${key}: ${val.trim()}`);
+    }
+  }
   return lines.length > 0 ? lines.join("\n") : "";
 }
 
@@ -399,40 +390,45 @@ export async function analyzeBrand(
         role: "system",
         content: `You are a senior brand analyst at ZHS Ecom, an email/SMS marketing agency specializing in Klaviyo retention flows for ecommerce brands.
 
-You have THREE sources of information:
-1. **Crawled website content** — actual page text from the brand's site (ground truth for products, copy, offers)
-2. **Structured data** — JSON-LD/Schema.org and Open Graph metadata from the site (precise product names, prices, ratings)
-3. **Strategist questionnaire** — answers provided by our team (treat as absolute ground truth — always override other sources)
+You have FOUR sources of information (in order of authority):
+1. **Strategist notes** — discount details and special instructions from our team (ABSOLUTE ground truth)
+2. **Onboarding form data** — structured answers from the client's onboarding questionnaire (if provided)
+3. **Crawled website content** — actual page text from the brand's site
+4. **Structured data** — JSON-LD/Schema.org and Open Graph metadata from the site
+5. **Your training knowledge** — if you recognize this brand, use what you know to ENRICH the profile
 
-You also have your own training knowledge. If you recognize this brand, use what you know about their reputation, typical customer, market position, and competitors to ENRICH the profile. But never contradict what the crawled data or questionnaire says.
+You must INFER these fields from the website, structured data, and your own knowledge:
+- industry, targetAudience, brandVoice, businessStage, priceRange, averageOrderValue, keyDifferentiators, brandTone, competitors
 
 Produce a JSON brand profile with these exact fields:
 {
   "brandName": "string",
   "industry": "string (e.g. skincare, supplements, apparel, home goods)",
   "targetAudience": "detailed string — demographics, psychographics, lifestyle, pain points",
-  "brandVoice": "string — communication style based on actual site copy",
-  "keyProducts": ["array of main products/categories — use real names and brief descriptions from the site"],
+  "brandVoice": "string — communication style inferred from actual site copy",
+  "keyProducts": ["array of main products/categories — use real names from the site"],
   "uniqueSellingPoints": ["array of 3-5 concrete differentiators — cite real claims from the site"],
-  "discountStrategy": "string — describe actual discount/offer patterns found, or 'none detected'",
-  "summary": "3-4 sentence brand summary that a copywriter could use to write on-brand marketing emails",
-  "priceRange": "string (from structured data, site content, or questionnaire)",
-  "averageOrderValue": "string (infer from product prices if possible, or 'unknown')",
-  "businessStage": "string (from questionnaire or inferred)",
-  "emailListSize": "string (from questionnaire or 'unknown')",
-  "discountApproach": "string (from questionnaire — how aggressively they discount)",
-  "keyDifferentiators": ["array from questionnaire or inferred from site"],
-  "brandTone": "string (from questionnaire or inferred from site copy)",
-  "competitors": "string (from questionnaire, or name likely competitors based on your knowledge)",
-  "specialInstructions": "string (from questionnaire or empty)"
+  "discountStrategy": "string — describe actual discount/offer patterns found, or 'none detected'. If strategist provided discount details, incorporate those exactly.",
+  "summary": "3-4 sentence brand summary a copywriter could use for on-brand marketing emails",
+  "priceRange": "string (infer from product prices or structured data)",
+  "averageOrderValue": "string (infer from product prices or 'unknown')",
+  "businessStage": "string (infer from site maturity, product range, reviews count)",
+  "emailListSize": "string ('unknown' unless onboarding data provides it)",
+  "discountApproach": "string (from strategist discount details, or inferred from site promotions)",
+  "keyDifferentiators": ["array — infer from site USPs, claims, and competitive positioning"],
+  "brandTone": "string (infer from site copy style — formal, casual, playful, luxury, etc.)",
+  "competitors": "string (name 2-3 likely competitors based on industry and positioning)",
+  "specialInstructions": "string (from strategist notes, or empty)"
 }
 
 Rules:
 - For products and prices: prefer structured data (JSON-LD) over body text. Use real product names.
-- For competitors: if the questionnaire doesn't provide them but you recognize this brand, name 2-3 likely competitors.
+- For competitors: name 2-3 likely competitors based on your industry knowledge.
 - For target audience: go beyond demographics — include psychographics and buying motivations.
-- Questionnaire answers are final — never override them.
-- Be specific and concrete. Every field should contain actionable information, not generic filler.`
+- Strategist notes override all other sources. If they say "no discount", respect that.
+- If onboarding form data is provided, treat it as high-quality client input — use it to fill any fields it covers.
+- Be specific and concrete. Every field should contain actionable information, not generic filler.
+- NEVER fabricate specific discount codes, percentages, or offers that aren't explicitly provided by the strategist or found on the site.`
       },
       {
         role: "user",
@@ -455,19 +451,19 @@ ${crawl.pageContent}`
     brandName: parsed.brandName || brandName,
     industry: parsed.industry || "ecommerce",
     targetAudience: parsed.targetAudience || "online shoppers",
-    brandVoice: parsed.brandVoice || questionnaire?.brandTone || "friendly and professional",
+    brandVoice: parsed.brandVoice || "friendly and professional",
     keyProducts: parsed.keyProducts || [],
     uniqueSellingPoints: parsed.uniqueSellingPoints || [],
     discountStrategy: parsed.discountStrategy || "none detected",
     summary: parsed.summary || "",
-    priceRange: parsed.priceRange || questionnaire?.priceRange || "unknown",
-    averageOrderValue: parsed.averageOrderValue || questionnaire?.averageOrderValue || "unknown",
-    businessStage: parsed.businessStage || questionnaire?.businessStage || "unknown",
-    emailListSize: parsed.emailListSize || questionnaire?.emailListSize || "unknown",
-    discountApproach: parsed.discountApproach || questionnaire?.discountApproach || "unknown",
-    keyDifferentiators: parsed.keyDifferentiators || questionnaire?.keyDifferentiators || [],
-    brandTone: parsed.brandTone || questionnaire?.brandTone || "friendly and professional",
-    competitors: parsed.competitors || questionnaire?.competitors || "unknown",
+    priceRange: parsed.priceRange || "unknown",
+    averageOrderValue: parsed.averageOrderValue || "unknown",
+    businessStage: parsed.businessStage || "unknown",
+    emailListSize: parsed.emailListSize || "unknown",
+    discountApproach: parsed.discountApproach || questionnaire?.discountNotes || "unknown",
+    keyDifferentiators: parsed.keyDifferentiators || [],
+    brandTone: parsed.brandTone || "friendly and professional",
+    competitors: parsed.competitors || "unknown",
     specialInstructions: parsed.specialInstructions || questionnaire?.specialInstructions || "",
     brandLogoUrl: crawl.visuals.logoUrl || undefined,
     brandColor: crawl.visuals.themeColor || undefined,
