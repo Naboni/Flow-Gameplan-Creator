@@ -18,7 +18,7 @@ import { parseFlowSpecSafe, validateFlowGraph, FLOW_TYPE_LABELS, type FlowNode, 
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
-import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2 } from "lucide-react";
+import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2, Info } from "lucide-react";
 
 import type { AppNodeData, AppTab, BrandProfile, BrandQuestionnaire as BrandQuestionnaireData, GeneratedResult, NodeCallbacks, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
 import { storeNodeForEdit, loadSavedNode, clearSavedNode } from "./utils/nodeStore";
@@ -27,7 +27,6 @@ import { FlowCanvasNode } from "./components/FlowCanvasNode";
 import { SmartEdge } from "./components/SmartEdge";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LibraryView, FLOW_TYPES } from "./components/LibraryView";
-import { CustomPlanBuilder } from "./components/CustomPlanBuilder";
 import { BrandQuestionnaire } from "./components/BrandQuestionnaire";
 import { ChatPanel, type ChatMessage } from "./components/ChatPanel";
 import { Button } from "@/components/ui/button";
@@ -35,6 +34,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   createFlowNode,
   downloadBlob,
@@ -118,7 +118,9 @@ function AppInner() {
   const [genResult, setGenResult] = useState<GeneratedResult | null>(null);
   const [genError, setGenError] = useState("");
   const [activeFlowIndex, setActiveFlowIndex] = useState(0);
-  const [customTemplateIds, setCustomTemplateIds] = useState<string[]>([]);
+  const [customFlowText, setCustomFlowText] = useState("");
+  const [flowSpecModalOpen, setFlowSpecModalOpen] = useState(false);
+  const [flowSpecInfoOpen, setFlowSpecInfoOpen] = useState(false);
 
   /* chat flow builder */
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -455,17 +457,14 @@ function AppInner() {
 
   /* ── generate flow gameplan ── */
 
-  const handleCustomSelectionChange = useCallback((ids: string[]) => {
-    setCustomTemplateIds(ids);
-  }, []);
 
   async function handleGenerate() {
     if (!genUrl.trim() || !genBrand.trim()) {
       setGenError("Please enter a website URL and brand name.");
       return;
     }
-    if (genPlan === "custom" && customTemplateIds.length === 0) {
-      setGenError("Select at least one template from the library.");
+    if (genPlan === "custom" && !customFlowText.trim()) {
+      setGenError("Please describe your flows.");
       return;
     }
     setGenBusy(true);
@@ -491,7 +490,7 @@ function AppInner() {
 
       setGenStep("generating");
       const genBody = genPlan === "custom"
-        ? { customTemplateIds, brandProfile: profile }
+        ? { customFlowText: customFlowText.trim(), brandProfile: profile }
         : { planKey: genPlan, brandProfile: profile };
 
       const generateRes = await fetch(`${API_BASE}/api/generate-flows`, {
@@ -789,8 +788,20 @@ function AppInner() {
 
                     {genPlan === "custom" && (
                       <div className="flex flex-col gap-1.5">
-                        <Label>Templates</Label>
-                        <CustomPlanBuilder disabled={genBusy} onSelectionChange={handleCustomSelectionChange} />
+                        <Label>Flow Specification</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFlowSpecModalOpen(true)}
+                          disabled={genBusy}
+                          className="justify-start"
+                        >
+                          <ClipboardList className="h-4 w-4 mr-2 shrink-0" />
+                          {customFlowText.trim()
+                            ? `${(customFlowText.match(/^\s*\d+[\.\)]/gm) || customFlowText.trim().split("\n").filter(Boolean)).length} flow(s) described`
+                            : "Describe flows"}
+                        </Button>
+                        <p className="text-xs text-muted-foreground">Describe your flows in natural language.</p>
                       </div>
                     )}
 
@@ -1117,6 +1128,50 @@ function AppInner() {
           </aside>
           )}
       </div>
+      <Dialog open={flowSpecModalOpen} onOpenChange={setFlowSpecModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Describe your flows
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setFlowSpecInfoOpen((v) => !v)}
+                title="How to describe your flows"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </DialogTitle>
+            <DialogDescription>Number each flow (1, 2, 3...). Each number starts a new flow chart.</DialogDescription>
+          </DialogHeader>
+          {flowSpecInfoOpen && (
+            <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">How to describe your flows</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li><b>Flow name & channel:</b> e.g. "Email Welcome", "SMS Welcome", "Checkout Abandonment"</li>
+                <li><b>Email/SMS counts:</b> e.g. "4 emails, 2 SMS"</li>
+                <li><b>Conditional splits:</b> e.g. "Split by purchase history" or "Conditional split by engagement"</li>
+                <li><b>Per-segment breakdown:</b> e.g. "3 emails for purchasers, 2 for non-purchasers"</li>
+                <li><b>Mirror another flow:</b> e.g. "mirrors Checkout Abandonment"</li>
+              </ul>
+              <p className="text-xs">You can write as much detail as you want per flow. The next flow starts at the next number.</p>
+            </div>
+          )}
+          <div className="py-2">
+            <textarea
+              id="flow-spec-modal"
+              className="flex min-h-[220px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+              placeholder={`1) Email Welcome: 4 emails, split by purchase history\n2) SMS Welcome: 3 SMS\n3) Checkout Abandonment: 6 emails, 4 SMS\n4) Post-Purchase: 3 emails, 2 SMS\n...`}
+              value={customFlowText}
+              onChange={(e) => setCustomFlowText(e.target.value)}
+              disabled={genBusy}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFlowSpecModalOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <BrandQuestionnaire
         open={questionnaireOpen}
         onOpenChange={setQuestionnaireOpen}

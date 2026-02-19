@@ -27,7 +27,7 @@ export const PLAN_OPTIONS: Array<{ label: string; value: PlanKey; desc: string }
   { label: "Core Foundation", value: "core-foundation", desc: "6 flows — brands under $1M/yr" },
   { label: "Growth Engine", value: "growth-engine", desc: "8 flows — scaling to $1-2M/yr" },
   { label: "Full System", value: "full-system", desc: "9 flows — scaling to $2-20M/yr" },
-  { label: "Custom", value: "custom", desc: "Pick templates from the library" }
+  { label: "Custom", value: "custom", desc: "Describe your flows in natural language" }
 ];
 
 const NODE_CONTAINER_WIDTH: Partial<Record<FlowNode["type"], number>> = {

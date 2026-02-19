@@ -3,6 +3,7 @@ import { getPlanDefinition, getAllPlanKeys, type PlanKey, type FlowBlueprint, ty
 import type { BrandProfile } from "../lib/brandAnalyzer.js";
 import { generateFlowsForPlan } from "../lib/flowGenerator.js";
 import { getAllTemplates } from "../lib/libraryStore.js";
+import { parseFlowText } from "../lib/flowTextParser.js";
 
 function templateToBlueprint(template: FlowTemplate): FlowBlueprint {
   return {
@@ -40,10 +41,11 @@ async function buildCustomPlan(templateIds: string[]) {
 
 export async function generateFlowsRoute(req: Request, res: Response) {
   try {
-    const { planKey, brandProfile, customTemplateIds } = req.body as {
+    const { planKey, brandProfile, customTemplateIds, customFlowText } = req.body as {
       planKey?: string;
       brandProfile?: BrandProfile;
       customTemplateIds?: string[];
+      customFlowText?: string;
     };
 
     if (!brandProfile) {
@@ -54,7 +56,10 @@ export async function generateFlowsRoute(req: Request, res: Response) {
     let plan;
     let resolvedPlanKey = planKey ?? "custom";
 
-    if (customTemplateIds && customTemplateIds.length > 0) {
+    if (customFlowText?.trim()) {
+      plan = await parseFlowText(customFlowText.trim());
+      resolvedPlanKey = "custom";
+    } else if (customTemplateIds && customTemplateIds.length > 0) {
       plan = await buildCustomPlan(customTemplateIds);
       resolvedPlanKey = "custom";
     } else if (planKey) {
@@ -65,7 +70,7 @@ export async function generateFlowsRoute(req: Request, res: Response) {
       }
       plan = getPlanDefinition(planKey as PlanKey);
     } else {
-      res.status(400).json({ error: "planKey or customTemplateIds is required." });
+      res.status(400).json({ error: "planKey, customTemplateIds, or customFlowText is required." });
       return;
     }
 

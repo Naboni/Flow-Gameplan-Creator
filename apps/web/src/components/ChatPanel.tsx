@@ -97,7 +97,7 @@ export function ChatPanel({ messages, onSend, loading, disabled }: ChatPanelProp
             <textarea
               ref={inputRef}
               className="chat-panel__input"
-              placeholder="Describe your flow or ask for modifications..."
+              placeholder={'Edit this flow... e.g. "Add a split after email 2 based on engagement"'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
