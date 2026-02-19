@@ -44,13 +44,17 @@ export function downloadBlob(content: Blob, filename: string) {
 export function createFlowNode(kind: NodeKind): FlowNode {
   const id = sanitizeId(`${kind}_${Date.now()}`);
   if (kind === "trigger") return { id, type: "trigger", title: "Trigger", event: "Define your trigger" };
-  if (kind === "email") return { id, type: "message", channel: "email", title: "Email" };
-  if (kind === "sms") return { id, type: "message", channel: "sms", title: "SMS" };
+  if (kind === "email") return {
+    id, type: "message", channel: "email", title: "Email",
+    strategy: { primaryFocus: "Define primary focus...", secondaryFocus: "Define secondary focus..." },
+  };
+  if (kind === "sms") return {
+    id, type: "message", channel: "sms", title: "SMS",
+    strategy: { primaryFocus: "Define primary focus...", secondaryFocus: "Define secondary focus..." },
+  };
   if (kind === "wait") return { id, type: "wait", duration: { value: 1, unit: "days" } };
   if (kind === "split") return { id, type: "split", title: "Conditional Split", condition: "Condition", labels: ["Yes", "No"] };
   if (kind === "profileFilter") return { id, type: "profileFilter", title: "Profile Filters", filters: ["Filter"] };
-  if (kind === "note") return { id, type: "note", title: "OBJECTIVE/FOCUS:", body: "Describe the objective here..." };
-  if (kind === "strategy") return { id, type: "strategy", title: "STRATEGY", primaryFocus: "Primary focus...", secondaryFocus: "Secondary focus..." };
   if (kind === "merge") return { id, type: "merge", title: "Merge" };
   return { id, type: "outcome", title: "Outcome", result: "Completed" };
 }

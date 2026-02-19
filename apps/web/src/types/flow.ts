@@ -1,9 +1,9 @@
 import type { FlowNode, FlowSpec, MessageStatus } from "@flow/core";
 
-export type AppTab = "generate" | "viewer" | "editor" | "library";
+export type AppTab = "generate" | "editor" | "library";
 export type TemplateChoice = "welcome-series" | "core-foundation" | "growth-engine" | "full-system" | "custom";
 export type PlanKey = "core-foundation" | "growth-engine" | "full-system" | "custom";
-export type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "note" | "strategy" | "merge";
+export type NodeKind = "trigger" | "email" | "sms" | "wait" | "split" | "outcome" | "profileFilter" | "merge";
 
 export type NodeCallbacks = {
   onPreview?: (nodeId: string) => void;

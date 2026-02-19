@@ -127,13 +127,10 @@ function AppInner() {
   /* library tab */
   const [libraryActiveType, setLibraryActiveType] = useState<FlowType>("email-welcome");
 
-  /* viewer tab */
-  const [viewerChoice, setViewerChoice] = useState<TemplateChoice>("welcome-series");
-  const [customViewerSpec, setCustomViewerSpec] = useState<FlowSpec | null>(null);
-
   /* editor tab */
   const [editorNodes, setEditorNodes] = useState<Node<AppNodeData>[]>([]);
   const [editorEdges, setEditorEdges] = useState<Edge[]>([]);
+  const [editorPreset, setEditorPreset] = useState<string>("");
 
   /* shared */
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -166,38 +163,6 @@ function AppInner() {
     return null;
   }, [tab, genResult, activeFlowIndex]);
 
-  const viewerSpec = useMemo(() => {
-    if (viewerChoice === "custom" && customViewerSpec) return customViewerSpec;
-    return getSpecFromChoice(viewerChoice);
-  }, [viewerChoice, customViewerSpec]);
-
-  const viewerLayout = useMemo(() => {
-    try {
-      return buildLayout(viewerSpec, { positionOverrides: viewerSpec.ui?.nodePositions ?? {} });
-    } catch (err) {
-      console.error("buildLayout failed:", err);
-      return { nodes: [], edges: [] };
-    }
-  }, [viewerSpec]);
-
-  const viewerNodes = useMemo<Node<AppNodeData>[]>(
-    () => viewerLayout.nodes.map((ln) => {
-      const raw = viewerSpec.nodes.find((n) => n.id === ln.id);
-      const flowNode: FlowNode = raw ?? ({ id: ln.id, type: "outcome", title: ln.title, result: "" } as FlowNode);
-      return {
-        id: ln.id, type: "flowNode", position: { x: ln.x, y: ln.y }, draggable: false,
-        style: { width: rfContainerWidth(ln.type) },
-        data: { title: ln.title, subtitle: raw ? nodeSubtitle(raw) : ln.type, nodeType: ln.type, flowNode }
-      };
-    }),
-    [viewerLayout.nodes, viewerSpec.nodes]
-  );
-
-  const viewerEdges = useMemo<Edge[]>(
-    () => specToRfEdges(viewerSpec, viewerNodes),
-    [viewerSpec, viewerNodes]
-  );
-
   const genNodes = useMemo<Node<AppNodeData>[]>(() => {
     if (!activeGenFlow) return [];
     try {
@@ -224,14 +189,12 @@ function AppInner() {
 
   const isEditorActive = tab === "editor";
 
-  /* Auto-position: works for ALL canvas tabs (including editor).
-     On first render, adjusts Y positions using actual measured heights.
-     After that, passes all changes through normally (editor drag etc.). */
-  const readOnlyNodes = tab === "generate" && activeGenFlow ? genNodes : viewerNodes;
-  const readOnlyEdges = tab === "generate" && activeGenFlow ? genEdges : viewerEdges;
-  const baseNodes = isEditorActive ? editorNodes : readOnlyNodes;
-  const baseEdges = isEditorActive ? editorEdges : readOnlyEdges;
-  const isCanvasActive = tab !== "library" && !(tab === "generate" && !activeGenFlow && !genBusy);
+  /* Auto-position: measures actual node heights and corrects Y spacing.
+     Works for both Generate (read-only) and Editor (editable) canvases.
+     After adjustment, the hook defers to layoutNodes (= editorNodes for editor). */
+  const baseNodes = isEditorActive ? editorNodes : genNodes;
+  const baseEdges = isEditorActive ? editorEdges : genEdges;
+  const isCanvasActive = isEditorActive || (tab === "generate" && !!activeGenFlow);
 
   const handleAutoReposition = useCallback((repositioned: Node<AppNodeData>[]) => {
     if (isEditorActive) setEditorNodes(repositioned);
@@ -244,10 +207,7 @@ function AppInner() {
   const flowEdges = baseEdges;
   const nodeCallbacksRef = useRef<NodeCallbacks | null>(null);
 
-  /* Inject callbacks into message nodes so FlowCanvasNode can show menus.
-     Works on both Generate and Editor tabs (any tab with canvas content).
-     Uses a ref to avoid circular dependency with callback definitions below. */
-  const showNodeMenus = isCanvasActive && tab !== "viewer";
+  const showNodeMenus = isCanvasActive;
   const flowNodes = useMemo(() => {
     if (!showNodeMenus || !nodeCallbacksRef.current) return autoNodes;
     const cbs = nodeCallbacksRef.current;
@@ -275,20 +235,19 @@ function AppInner() {
 
   const hasContent = isEditorActive
     ? editorNodes.length > 0
-    : tab === "generate"
-      ? !!activeGenFlow
-      : tab !== "library";
+    : tab === "generate" && !!activeGenFlow;
 
   /* ── editor handlers ── */
 
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
-    /* Always forward through the auto-position hook (handles initial
-       measurement for all tabs, then becomes a passthrough). */
-    autoNodesChange(changes);
-    /* For editor, also update the backing state so add/delete/drag persists. */
     if (isEditorActive) {
-      setEditorNodes((nds) => applyNodeChanges(changes, nds));
+      /* Filter out 'remove' changes — React Flow fires these during brief
+         state desyncs between editorNodes and the auto-position hook.
+         Node deletion is handled explicitly via our delete functions. */
+      const safe = changes.filter(c => c.type !== "remove");
+      if (safe.length > 0) setEditorNodes((nds) => applyNodeChanges(safe, nds));
     }
+    autoNodesChange(changes);
   }, [isEditorActive, autoNodesChange]);
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -463,6 +422,16 @@ function AppInner() {
     setNotice("Editor reset.");
   }
 
+  function loadPresetIntoEditor(choice: TemplateChoice) {
+    const spec = getSpecFromChoice(choice);
+    const nodes = specToRfNodes(spec);
+    setEditorNodes(nodes);
+    setEditorEdges(specToRfEdges(spec, nodes));
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setNotice(`Loaded "${spec.name}" preset into editor.`);
+  }
+
   function openFlowInEditor(spec: FlowSpec) {
     /* Use current auto-positioned nodes if they match the spec
        (avoids recomputing from scratch with estimated heights). */
@@ -633,7 +602,7 @@ function AppInner() {
   function getExportSpec(): FlowSpec {
     if (isEditorActive) return editorToFlowSpec(editorNodes, editorEdges);
     if (tab === "generate" && activeGenFlow) return activeGenFlow as FlowSpec;
-    return viewerSpec;
+    return editorToFlowSpec(editorNodes, editorEdges);
   }
 
   function handleExportJson() {
@@ -726,7 +695,6 @@ function AppInner() {
   const TAB_ITEMS: { value: AppTab; label: string; primary?: boolean }[] = [
     { value: "generate", label: "Generate", primary: true },
     { value: "library", label: "Library", primary: true },
-    { value: "viewer", label: "Viewer" },
     { value: "editor", label: "Editor" },
   ];
 
@@ -874,31 +842,35 @@ function AppInner() {
                 )
               )}
 
-              {/* viewer sidebar */}
-              {tab === "viewer" && (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="viewer-preset">Preset</Label>
-                  <select
-                    id="viewer-preset"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    value={viewerChoice}
-                    onChange={(e) => setViewerChoice(e.target.value as TemplateChoice)}
-                  >
-                    {VIEWER_CHOICES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {/* editor sidebar */}
               {tab === "editor" && (
                 <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="editor-preset">Load Preset</Label>
+                    <div className="flex gap-1.5">
+                      <select
+                        id="editor-preset"
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        value={editorPreset}
+                        onChange={(e) => setEditorPreset(e.target.value as TemplateChoice)}
+                      >
+                        <option value="">— Select —</option>
+                        {VIEWER_CHOICES.filter(c => c.value !== "custom").map((c) => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                      </select>
+                      <Button size="sm" variant="outline" disabled={!editorPreset}
+                        onClick={() => { if (editorPreset) loadPresetIntoEditor(editorPreset as TemplateChoice); }}>
+                        Load
+                      </Button>
+                    </div>
+                  </div>
+                  <Separator />
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Add Nodes</p>
                   {([
                     { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
                     { label: "Timing", kinds: ["wait"] as NodeKind[] },
-                    { label: "Logic", kinds: ["split", "profileFilter"] as NodeKind[] },
-                    { label: "Annotations", kinds: ["note", "strategy"] as NodeKind[] }
+                    { label: "Logic", kinds: ["split", "profileFilter", "merge"] as NodeKind[] },
                   ]).map((category) => (
                     <div key={category.label}>
                       <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">{category.label}</p>
@@ -909,13 +881,7 @@ function AppInner() {
                             <button key={kind} type="button" draggable
                               onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
                               onClick={() => appendEditorNode(kind)}
-                              className={`h-9 rounded-md border text-sm font-medium cursor-grab transition-colors ${
-                                kind === "note"
-                                  ? "bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100"
-                                  : kind === "strategy"
-                                    ? "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-400 text-orange-700 hover:from-orange-100 hover:to-orange-200"
-                                    : "bg-white border-input text-foreground hover:bg-muted"
-                              }`}
+                              className="h-9 rounded-md border text-sm font-medium cursor-grab transition-colors bg-white border-input text-foreground hover:bg-muted"
                             >+ {displayLabel}</button>
                           );
                         })}
@@ -1017,7 +983,7 @@ function AppInner() {
                 </div>
               ) : (
                 <ReactFlow
-                  key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : tab}
+                  key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : "editor"}
                   onInit={(inst) => { reactFlowRef.current = inst; }}
                   nodes={flowNodes}
                   edges={flowEdges}
@@ -1038,11 +1004,11 @@ function AppInner() {
                     if (!isEditorActive || !reactFlowRef.current) return;
                     event.preventDefault();
                     const rawKind = event.dataTransfer.getData("application/flow-node-kind");
-                    const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "note", "strategy", "merge"];
+                    const allowed: NodeKind[] = ["trigger", "email", "sms", "wait", "split", "outcome", "profileFilter", "merge"];
                     if (!allowed.includes(rawKind as NodeKind)) return;
                     appendEditorNode(rawKind as NodeKind, reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
                   }}
-                  deleteKeyCode={isEditorActive ? "Delete" : null}
+                  deleteKeyCode={null}
                   panOnDrag
                   defaultEdgeOptions={{ ...EDGE_STYLE }}
                 >
@@ -1097,14 +1063,6 @@ function AppInner() {
                   </div>
                 )}
 
-                {"body" in selectedFlowNode && (
-                  <div className="flex flex-col gap-1.5">
-                    <Label>Body</Label>
-                    <Textarea value={selectedFlowNode.body} disabled={!isEditorActive} rows={6}
-                      onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "note" ? { ...fn, body: e.target.value } : fn); }} />
-                  </div>
-                )}
-
                 {"copyHint" in selectedFlowNode && selectedFlowNode.copyHint && (
                   <div className="flex flex-col gap-1.5">
                     <Label>Copy hint</Label>
@@ -1112,21 +1070,28 @@ function AppInner() {
                   </div>
                 )}
 
-                {"primaryFocus" in selectedFlowNode && (
+                {selectedFlowNode.type === "message" && selectedFlowNode.strategy && (
                   <>
+                    <Separator />
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Strategy</p>
                     <div className="flex flex-col gap-1.5">
                       <Label>Primary focus</Label>
-                      <Textarea value={selectedFlowNode.primaryFocus} disabled={!isEditorActive} rows={3}
-                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, primaryFocus: e.target.value } : fn); }} />
+                      <Textarea value={selectedFlowNode.strategy.primaryFocus} disabled={!isEditorActive} rows={3}
+                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => {
+                          if (fn.type !== "message") return fn;
+                          const s = fn.strategy ?? { primaryFocus: "", secondaryFocus: "" };
+                          return { ...fn, strategy: { primaryFocus: e.target.value, secondaryFocus: s.secondaryFocus ?? "" } };
+                        }); }} />
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <Label>Secondary focus</Label>
-                      <Textarea value={selectedFlowNode.secondaryFocus} disabled={!isEditorActive} rows={3}
-                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => fn.type === "strategy" ? { ...fn, secondaryFocus: e.target.value } : fn); }} />
+                      <Textarea value={selectedFlowNode.strategy.secondaryFocus ?? ""} disabled={!isEditorActive} rows={3}
+                        onChange={(e) => { if (!isEditorActive) return; updateEditorNodeData(selectedFlowNode.id, (fn) => {
+                          if (fn.type !== "message") return fn;
+                          const s = fn.strategy ?? { primaryFocus: "", secondaryFocus: "" };
+                          return { ...fn, strategy: { primaryFocus: s.primaryFocus, secondaryFocus: e.target.value } };
+                        }); }} />
                     </div>
-                    {"branchLabel" in selectedFlowNode && selectedFlowNode.branchLabel && (
-                      <p className="text-sm"><b>Branch:</b> {selectedFlowNode.branchLabel === "yes" ? "Yes (purchaser)" : "No (non-purchaser)"}</p>
-                    )}
                   </>
                 )}
 

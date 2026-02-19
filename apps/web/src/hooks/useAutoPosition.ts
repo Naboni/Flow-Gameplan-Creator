@@ -13,12 +13,9 @@ const END_EXTRA_MULTIPLIER = 0.75;
  *          recomputed so that the gap between every parent's bottom edge
  *          and the next node's top edge is a fixed constant.
  *
- * After the initial adjustment, ALL subsequent changes (drag, selection,
- * dimension re-measurements) pass through normally — so the editor's
- * drag-and-drop continues to work without interference.
- *
- * @param onReposition  called once after the Y-correction is applied,
- *                      so the caller can sync external state (e.g. editorNodes).
+ * After the initial adjustment the hook calls `onReposition` so the caller
+ * can sync external state (e.g. editorNodes). From that point on the hook
+ * returns `layoutNodes` directly, deferring to the caller's state.
  */
 export function useAutoPosition(
   layoutNodes: Node<AppNodeData>[],
@@ -31,7 +28,6 @@ export function useAutoPosition(
   const adjustedRef = useRef(false);
   const prevKeyRef = useRef("");
 
-  /* Refs so the callback always sees the latest values */
   const edgesRef = useRef(layoutEdges);
   edgesRef.current = layoutEdges;
   const layoutRef = useRef(layoutNodes);
@@ -39,7 +35,6 @@ export function useAutoPosition(
   const onRepositionRef = useRef(onReposition);
   onRepositionRef.current = onReposition;
 
-  /* Reset when the set of nodes changes (different flow / tab) */
   const inputKey = layoutNodes.map((n) => n.id).join(",");
 
   useEffect(() => {
@@ -51,32 +46,15 @@ export function useAutoPosition(
     }
   }, [inputKey, layoutNodes]);
 
-  /* Sync data changes from external state (e.g. status updates) after adjustment.
-     This ensures that when editorNodes data changes without adding/removing nodes,
-     the hook's internal nodes reflect those changes. */
-  useEffect(() => {
-    if (!adjustedRef.current) return;
-    setNodes((prev) =>
-      prev.map((n) => {
-        const updated = layoutNodes.find((ln) => ln.id === n.id);
-        if (!updated || updated.data === n.data) return n;
-        return { ...n, data: updated.data };
-      })
-    );
-  }, [layoutNodes]);
-
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       if (!enabled) return;
 
-      /* After the initial correction, pass ALL changes through normally.
-         This lets editor drag / selection / dimension updates work. */
       if (adjustedRef.current) {
         setNodes((nds) => applyNodeChanges(changes, nds));
         return;
       }
 
-      /* ── Pre-adjustment phase: capture dimensions ── */
       let hasDim = false;
       for (const c of changes) {
         if (c.type === "dimensions" && c.dimensions && c.dimensions.height > 0) {
@@ -97,7 +75,6 @@ export function useAutoPosition(
         }
       }
 
-      /* Apply non-dimension changes while waiting for all measurements */
       const other = changes.filter((c) => c.type !== "dimensions");
       if (other.length > 0) {
         setNodes((nds) => applyNodeChanges(other, nds));
@@ -106,8 +83,15 @@ export function useAutoPosition(
     [enabled]
   );
 
+  /* After adjustment + callback, layoutNodes is updated by the caller.
+     Return layoutNodes directly to avoid dual-state conflicts.
+     Before adjustment, return the hook's internal nodes (being measured). */
+  const displayNodes = enabled
+    ? (adjustedRef.current ? layoutNodes : nodes)
+    : layoutNodes;
+
   return {
-    nodes: enabled ? nodes : layoutNodes,
+    nodes: displayNodes,
     onNodesChange,
     didReposition: adjustedRef.current
   };
@@ -122,7 +106,6 @@ function recomputePositions(
 ): Node<AppNodeData>[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  /* Separate side nodes (note / strategy) from main-flow nodes */
   const sideIds = new Set<string>();
   for (const n of nodes) {
     const t = n.data.nodeType;
@@ -132,7 +115,6 @@ function recomputePositions(
   const mainEdges = edges.filter((e) => !sideIds.has(e.source));
   const sideEdges = edges.filter((e) => sideIds.has(e.source));
 
-  /* Build adjacency */
   const parents = new Map<string, string[]>();
   const children = new Map<string, string[]>();
   const inDeg = new Map<string, number>();
@@ -151,7 +133,6 @@ function recomputePositions(
     inDeg.set(e.target, (inDeg.get(e.target) ?? 0) + 1);
   }
 
-  /* Topological sort */
   const queue: string[] = [];
   for (const [id, deg] of inDeg) {
     if (deg === 0) queue.push(id);
@@ -168,12 +149,10 @@ function recomputePositions(
     }
   }
 
-  /* Include any orphan main nodes */
   for (const n of nodes) {
     if (!sideIds.has(n.id) && !topo.includes(n.id)) topo.push(n.id);
   }
 
-  /* Compute new Y per node: parentY + measuredHeight + FIXED_GAP */
   const newY = new Map<string, number>();
 
   for (const id of topo) {
@@ -207,7 +186,6 @@ function recomputePositions(
     newY.set(id, maxY);
   }
 
-  /* Reposition side nodes to match their target's new Y */
   for (const e of sideEdges) {
     const targetY = newY.get(e.target);
     if (targetY !== undefined) {
