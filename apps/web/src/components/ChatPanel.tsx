@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from "react";
-import { Send, ChevronDown, ChevronUp, MessageSquare, Loader2 } from "lucide-react";
+import { Send, ChevronDown, ChevronUp, MessageSquare, Loader2, Trash2 } from "lucide-react";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -9,11 +9,12 @@ export type ChatMessage = {
 type ChatPanelProps = {
   messages: ChatMessage[];
   onSend: (message: string) => void;
+  onClear?: () => void;
   loading: boolean;
   disabled?: boolean;
 };
 
-export function ChatPanel({ messages, onSend, loading, disabled }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, onClear, loading, disabled }: ChatPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -48,16 +49,27 @@ export function ChatPanel({ messages, onSend, loading, disabled }: ChatPanelProp
   return (
     <div className="chat-panel">
       {/* Toggle bar */}
-      <button
-        className="chat-panel__toggle"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <MessageSquare size={16} />
-        <span className="chat-panel__toggle-text">
-          {expanded ? "Hide AI Chat" : "Describe a flow in plain English..."}
-        </span>
-        {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-      </button>
+      <div className="chat-panel__toggle-row">
+        <button
+          className="chat-panel__toggle"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <MessageSquare size={16} />
+          <span className="chat-panel__toggle-text">
+            {expanded ? "Hide AI Chat" : "Describe a flow in plain English..."}
+          </span>
+          {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
+        {expanded && messages.length > 0 && onClear && (
+          <button
+            className="chat-panel__clear"
+            onClick={onClear}
+            title="Clear chat"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
 
       {expanded && (
         <div className="chat-panel__body">

@@ -150,7 +150,11 @@ export function specToRfEdges(spec: FlowSpec, rfNodes?: Node<AppNodeData>[]): Ed
   });
 }
 
-export function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]): FlowSpec {
+export function editorToFlowSpec(
+  rfNodes: Node<AppNodeData>[],
+  rfEdges: Edge[],
+  overrides?: { id?: string; name?: string; channels?: ("email" | "sms")[]; defaults?: { delay: { value: number; unit: "minutes" | "hours" | "days" } } },
+): FlowSpec {
   const channels = new Set<"email" | "sms">(["email"]);
   const flowNodes: FlowNode[] = rfNodes.map((n) => {
     const fn = n.data.flowNode;
@@ -164,8 +168,11 @@ export function editorToFlowSpec(rfNodes: Node<AppNodeData>[], rfEdges: Edge[]):
   const positions: Record<string, { x: number; y: number }> = {};
   for (const n of rfNodes) positions[n.id] = n.position;
   return {
-    id: "editor_flow", name: "Custom Editor Flow", source: { mode: "manual" },
-    channels: [...channels], defaults: { delay: { value: 2, unit: "days" } },
+    id: overrides?.id ?? "editor_flow",
+    name: overrides?.name ?? "Custom Editor Flow",
+    source: { mode: "manual" },
+    channels: overrides?.channels ?? [...channels],
+    defaults: overrides?.defaults ?? { delay: { value: 2, unit: "days" } },
     nodes: flowNodes, edges: flowEdges, ui: { nodePositions: positions }
   } as FlowSpec;
 }

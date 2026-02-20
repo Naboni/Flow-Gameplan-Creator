@@ -18,7 +18,9 @@ import { parseFlowSpecSafe, validateFlowGraph, FLOW_TYPE_LABELS, type FlowNode, 
 import { buildLayout } from "@flow/layout";
 import { exportFlowToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
-import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2, Info } from "lucide-react";
+import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2, Info, Moon, Sun } from "lucide-react";
+import { ThemeProvider, useTheme } from "./components/ThemeProvider";
+import { toast, Toaster } from "sonner";
 
 import type { AppNodeData, AppTab, BrandProfile, BrandQuestionnaire as BrandQuestionnaireData, GeneratedResult, NodeCallbacks, NodeKind, PlanKey, TemplateChoice } from "./types/flow";
 import { storeNodeForEdit, loadSavedNode, clearSavedNode } from "./utils/nodeStore";
@@ -104,7 +106,22 @@ function normalizeFlowSpecCandidate(input: unknown): unknown {
   return spec;
 }
 
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className="ml-auto p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+    </button>
+  );
+}
+
 function AppInner() {
+  const { theme } = useTheme();
   const [tab, setTab] = useState<AppTab>("generate");
 
   /* generate tab */
@@ -133,11 +150,13 @@ function AppInner() {
   const [editorNodes, setEditorNodes] = useState<Node<AppNodeData>[]>([]);
   const [editorEdges, setEditorEdges] = useState<Edge[]>([]);
   const [editorPreset, setEditorPreset] = useState<string>("");
+  const [editorFlows, setEditorFlows] = useState<FlowSpec[]>([]);
+  const [activeEditorFlowIndex, setActiveEditorFlowIndex] = useState(0);
 
   /* shared */
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-  const [notice, setNotice] = useState("");
+  /* notice replaced by sonner toast */
   const [busyPngExport, setBusyPngExport] = useState(false);
   const [busyMiroExport, setBusyMiroExport] = useState(false);
   const [miroBoardId, setMiroBoardId] = useState("");
@@ -190,6 +209,7 @@ function AppInner() {
   }, [activeGenFlow, genNodes]);
 
   const isEditorActive = tab === "editor";
+  const isMultiFlowEditor = editorFlows.length > 1;
 
   /* Auto-position: measures actual node heights and corrects Y spacing.
      Works for both Generate (read-only) and Editor (editable) canvases.
@@ -260,7 +280,7 @@ function AppInner() {
   const handleConnect = useCallback((connection: Connection) => {
     if (!isEditorActive || !connection.source || !connection.target) return;
     setEditorEdges((eds) => rfAddEdge({ ...connection, ...EDGE_STYLE }, eds));
-    setNotice("Connected nodes.");
+    toast.success("Connected nodes.");
   }, [isEditorActive]);
 
   function appendEditorNode(kind: NodeKind, position?: { x: number; y: number }) {
@@ -268,7 +288,7 @@ function AppInner() {
     const fn = createFlowNode(kind);
     setEditorNodes((nds) => [...nds, toRfNode(fn, position ?? { x: 200, y: 80 + editorNodes.length * 140 })]);
     setSelectedNodeId(fn.id);
-    setNotice("Node added.");
+    toast.success("Node added.");
   }
 
   function deleteSelectedNode() {
@@ -276,14 +296,14 @@ function AppInner() {
     setEditorNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
     setEditorEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
     setSelectedNodeId(null);
-    setNotice("Node removed.");
+    toast("Node removed.");
   }
 
   function deleteSelectedEdge() {
     if (!isEditorActive || !selectedEdgeId) return;
     setEditorEdges((eds) => eds.filter((e) => e.id !== selectedEdgeId));
     setSelectedEdgeId(null);
-    setNotice("Edge removed.");
+    toast("Edge removed.");
   }
 
   function updateEditorNodeData(nodeId: string, updater: (fn: FlowNode) => FlowNode) {
@@ -352,7 +372,7 @@ function AppInner() {
       });
     }
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
-    setNotice("Node deleted.");
+    toast("Node deleted.");
   }, [isEditorActive, tab, genResult, activeFlowIndex, selectedNodeId]);
 
   const handleNodeStatusChange = useCallback((nodeId: string, status: MessageStatus) => {
@@ -413,15 +433,38 @@ function AppInner() {
         });
       }
       clearSavedNode();
-      setNotice("Email updated from editor.");
+      toast.success("Email updated from editor.");
     }, 1000);
     return () => clearInterval(interval);
   }, [isEditorActive, tab, genResult, activeFlowIndex]);
 
+  function switchEditorFlow(targetIndex: number) {
+    if (targetIndex === activeEditorFlowIndex) return;
+    if (targetIndex < 0 || targetIndex >= editorFlows.length) return;
+
+    /* Save current editor state back into editorFlows */
+    const current = editorFlows[activeEditorFlowIndex];
+    const snapshot = editorToFlowSpec(editorNodes, editorEdges, {
+      id: current.id, name: current.name, channels: current.channels, defaults: current.defaults,
+    });
+    setEditorFlows((flows) => flows.map((f, i) => (i === activeEditorFlowIndex ? snapshot : f)));
+
+    /* Load the target flow */
+    const target = editorFlows[targetIndex];
+    const nodes = specToRfNodes(target);
+    setEditorNodes(nodes);
+    setEditorEdges(specToRfEdges(target, nodes));
+    setActiveEditorFlowIndex(targetIndex);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    toast(`Switched to "${target.name}".`);
+  }
+
   function resetEditorFlow() {
     setEditorNodes([]); setEditorEdges([]);
+    setEditorFlows([]); setActiveEditorFlowIndex(0);
     setSelectedNodeId(null); setSelectedEdgeId(null);
-    setNotice("Editor reset.");
+    toast("Editor reset.");
   }
 
   function loadPresetIntoEditor(choice: TemplateChoice) {
@@ -429,9 +472,10 @@ function AppInner() {
     const nodes = specToRfNodes(spec);
     setEditorNodes(nodes);
     setEditorEdges(specToRfEdges(spec, nodes));
+    setEditorFlows([]); setActiveEditorFlowIndex(0);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
-    setNotice(`Loaded "${spec.name}" preset into editor.`);
+    toast.success(`Loaded "${spec.name}" preset into editor.`);
   }
 
   function openFlowInEditor(spec: FlowSpec) {
@@ -449,10 +493,11 @@ function AppInner() {
       setEditorNodes(nodes);
       setEditorEdges(specToRfEdges(spec, nodes));
     }
+    setEditorFlows([]); setActiveEditorFlowIndex(0);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
     setTab("editor");
-    setNotice(`Loaded "${spec.name}" into editor.`);
+    toast.success(`Loaded "${spec.name}" into editor.`);
   }
 
   /* ── generate flow gameplan ── */
@@ -599,7 +644,15 @@ function AppInner() {
   /* ── export / import ── */
 
   function getExportSpec(): FlowSpec {
-    if (isEditorActive) return editorToFlowSpec(editorNodes, editorEdges);
+    if (isEditorActive) {
+      if (isMultiFlowEditor) {
+        const current = editorFlows[activeEditorFlowIndex];
+        return editorToFlowSpec(editorNodes, editorEdges, {
+          id: current.id, name: current.name, channels: current.channels, defaults: current.defaults,
+        });
+      }
+      return editorToFlowSpec(editorNodes, editorEdges);
+    }
     if (tab === "generate" && activeGenFlow) return activeGenFlow as FlowSpec;
     return editorToFlowSpec(editorNodes, editorEdges);
   }
@@ -607,7 +660,7 @@ function AppInner() {
   function handleExportJson() {
     const spec = getExportSpec();
     downloadBlob(new Blob([JSON.stringify(spec, null, 2)], { type: "application/json;charset=utf-8" }), `${spec.id}.json`);
-    setNotice("Exported JSON.");
+    toast.success("Exported JSON.");
   }
 
   function handleExportAllJson() {
@@ -616,20 +669,36 @@ function AppInner() {
       new Blob([JSON.stringify(genResult.flows, null, 2)], { type: "application/json;charset=utf-8" }),
       `${genResult.planKey}_all_flows.json`
     );
-    setNotice("Exported all flows.");
+    toast.success("Exported all flows.");
+  }
+
+  function handleExportAllEditorFlows() {
+    if (!isMultiFlowEditor) return;
+    /* Snapshot current editor state into the flows array before exporting */
+    const current = editorFlows[activeEditorFlowIndex];
+    const allFlows = editorFlows.map((flow, idx) =>
+      idx === activeEditorFlowIndex
+        ? editorToFlowSpec(editorNodes, editorEdges, { id: current.id, name: current.name, channels: current.channels, defaults: current.defaults })
+        : flow
+    );
+    downloadBlob(
+      new Blob([JSON.stringify(allFlows, null, 2)], { type: "application/json;charset=utf-8" }),
+      "editor_all_flows.json"
+    );
+    toast.success("Exported all flows.");
   }
 
   async function handleExportPng() {
     if (!canvasCaptureRef.current) return;
     setBusyPngExport(true);
     try {
-      const dataUrl = await toPng(canvasCaptureRef.current, { cacheBust: true, backgroundColor: "#f8fafc", pixelRatio: 2 });
+      const dataUrl = await toPng(canvasCaptureRef.current, { cacheBust: true, backgroundColor: theme === "dark" ? "#111114" : "#f8fafc", pixelRatio: 2 });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${getExportSpec().id}.png`;
       a.click();
-      setNotice("Exported PNG.");
-    } catch { setNotice("PNG export failed."); }
+      toast.success("Exported PNG.");
+    } catch { toast.error("PNG export failed."); }
     finally { setBusyPngExport(false); }
   }
 
@@ -640,34 +709,53 @@ function AppInner() {
       const text = await file.text();
       const raw = JSON.parse(text);
 
-      const single = Array.isArray(raw) ? raw[0] : raw;
-      if (!single || !Array.isArray(single.nodes) || !Array.isArray(single.edges)) {
-        setNotice("Invalid flow JSON — missing nodes or edges.");
+      const items: unknown[] = Array.isArray(raw) ? raw : [raw];
+
+      /* Validate and parse every flow in the file */
+      const specs: FlowSpec[] = [];
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        const obj = item as Record<string, unknown>;
+        if (!Array.isArray(obj.nodes) || !Array.isArray(obj.edges)) continue;
+
+        const normalized = normalizeFlowSpecCandidate(obj);
+        const result = parseFlowSpecSafe(normalized);
+        specs.push(result.success ? result.data : normalized as FlowSpec);
+      }
+
+      if (specs.length === 0) {
+        toast.error("Invalid flow JSON — no valid flows found.");
         return;
       }
 
-      let spec: FlowSpec;
-      const result = parseFlowSpecSafe(single);
-      if (result.success) {
-        spec = result.data;
-      } else {
-        spec = single as FlowSpec;
-      }
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
 
-      const nodes = specToRfNodes(spec);
+      /* Load first flow into editor canvas */
+      const nodes = specToRfNodes(specs[0]);
       setEditorNodes(nodes);
-      setEditorEdges(specToRfEdges(spec, nodes));
-      setSelectedNodeId(null); setSelectedEdgeId(null);
-      setNotice(Array.isArray(raw) ? `Imported first of ${raw.length} flows.` : "Imported JSON.");
+      setEditorEdges(specToRfEdges(specs[0], nodes));
+
+      if (specs.length === 1) {
+        /* Single flow → clear multi-flow state */
+        setEditorFlows([]);
+        setActiveEditorFlowIndex(0);
+        toast.success("Imported JSON.");
+      } else {
+        /* Multiple flows → store all and show flow selector in editor sidebar */
+        setEditorFlows(specs);
+        setActiveEditorFlowIndex(0);
+        toast.success(`Imported ${specs.length} flows.`);
+      }
     } catch (err) {
       console.error("Import failed:", err);
-      setNotice("Invalid JSON file.");
+      toast.error("Invalid JSON file.");
     }
     finally { event.target.value = ""; }
   }
 
   async function handleExportMiro() {
-    if (!miroBoardId.trim() || !miroToken.trim()) { setNotice("Enter Miro board ID and token."); return; }
+    if (!miroBoardId.trim() || !miroToken.trim()) { toast.error("Enter Miro board ID and token."); return; }
     setBusyMiroExport(true);
     try {
       const spec = getExportSpec();
@@ -675,11 +763,11 @@ function AppInner() {
       const posOverrides: Record<string, { x: number; y: number }> = {};
       for (const n of flowNodes) posOverrides[n.id] = n.position;
       const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: posOverrides });
-      setNotice(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
+      toast.success(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
     } catch (error) {
       console.error("Miro export error:", error);
       const status = typeof error === "object" && error && "status" in error ? (error as { status: number }).status : 0;
-      setNotice(status ? `Miro export failed (${status}). Check console for details.` : "Miro export failed.");
+      toast.error(status ? `Miro export failed (${status}). Check console for details.` : "Miro export failed.");
     } finally { setBusyMiroExport(false); }
   }
 
@@ -691,34 +779,34 @@ function AppInner() {
 
   /* ── render ── */
 
-  const TAB_ITEMS: { value: AppTab; label: string; primary?: boolean }[] = [
-    { value: "generate", label: "Generate", primary: true },
-    { value: "library", label: "Library", primary: true },
+  const TAB_ITEMS: { value: AppTab; label: string }[] = [
+    { value: "generate", label: "Generate" },
+    { value: "library", label: "Library" },
     { value: "editor", label: "Editor" },
   ];
 
   return (
     <ReactFlowProvider>
-      <div className="flex h-screen overflow-hidden">
+      <div className="flex h-screen overflow-hidden bg-background">
           {/* ── sidebar ── */}
-          <aside className="w-[260px] flex-shrink-0 border-r border-border bg-white flex flex-col overflow-y-auto">
-            <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-              <img src="/logo.png" alt="ZHS Ecom" className="h-7 object-contain" />
-              <span className="text-sm font-semibold text-slate-500">Flow Gameplan</span>
+          <aside className="w-[290px] flex-shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col overflow-y-auto">
+            {/* sidebar logo header — height matches navbar exactly */}
+            <div className="flex items-center px-5 h-[52px] border-b border-sidebar-border shrink-0">
+              <span className="text-base font-bold text-foreground tracking-tight">Flow Gameplan Creator</span>
             </div>
-            <div className="flex-1 p-4 pt-2 flex flex-col gap-3">
+            <div className="flex-1 px-3 py-4 flex flex-col gap-4">
               {/* library sidebar */}
               {tab === "library" && (
-                <div className="flex flex-col gap-1">
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1">Flow Types</p>
+                <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-1">
+                  <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-2 pb-1.5">Flow Types</p>
                   {FLOW_TYPES.map((ft) => (
                     <button
                       key={ft}
                       type="button"
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors text-left ${
+                      className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-[13px] transition-colors text-left ${
                         ft === libraryActiveType
-                          ? "bg-primary/10 text-primary font-semibold"
-                          : "text-foreground hover:bg-muted font-medium"
+                          ? "bg-sidebar-item-active-bg text-primary font-semibold shadow-sm"
+                          : "text-sidebar-foreground hover:bg-sidebar-item-hover font-medium"
                       }`}
                       onClick={() => setLibraryActiveType(ft)}
                     >
@@ -731,29 +819,33 @@ function AppInner() {
               {/* generate sidebar */}
               {tab === "generate" && (
                 genStep === "done" && genResult ? (
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Generated flows — {genResult.planName}</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">{genResult.brandName} · {genResult.flows.length} flows</p>
+                  <div className="flex flex-col gap-4">
+                    {/* Flow list card */}
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-2">
+                      <div className="px-1">
+                        <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider">Generated Flows</p>
+                        <p className="text-[13px] font-medium text-sidebar-muted mt-0.5">{genResult.brandName} · {genResult.flows.length} flows</p>
+                      </div>
+                      <div className="flex flex-col gap-1 max-h-[360px] overflow-y-auto">
+                        {genResult.flows.map((flow, idx) => (
+                          <button
+                            key={flow.id}
+                            type="button"
+                            className={`text-left px-3 py-2.5 rounded-lg text-[13px] transition-colors ${
+                              idx === activeFlowIndex
+                                ? "bg-sidebar-item-active-bg text-primary font-semibold shadow-sm border border-sidebar-item-active-border"
+                                : "text-sidebar-foreground hover:bg-sidebar-item-hover font-medium border border-transparent"
+                            }`}
+                            onClick={() => setActiveFlowIndex(idx)}
+                          >
+                            <span className="block truncate">{flow.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1 max-h-[360px] overflow-y-auto">
-                      {genResult.flows.map((flow, idx) => (
-                        <button
-                          key={flow.id}
-                          type="button"
-                          className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors truncate ${
-                            idx === activeFlowIndex
-                              ? "bg-primary/10 text-primary border border-primary/30"
-                              : "text-foreground hover:bg-muted border border-transparent"
-                          }`}
-                          onClick={() => setActiveFlowIndex(idx)}
-                        >
-                          {flow.name}
-                        </button>
-                      ))}
-                    </div>
-                    <Separator />
-                    <div className="flex flex-col gap-2">
+                    {/* Actions card */}
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-2">
+                      <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Actions</p>
                       <Button size="sm" onClick={() => openFlowInEditor(genResult.flows[activeFlowIndex])}>
                         <Pencil className="w-3.5 h-3.5 mr-1.5" />
                         Edit in Editor
@@ -769,209 +861,253 @@ function AppInner() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="gen-plan">Plan</Label>
-                      <select
-                        id="gen-plan"
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        value={genPlan}
-                        onChange={(e) => setGenPlan(e.target.value as PlanKey)}
-                        disabled={genBusy}
-                      >
-                        {PLAN_OPTIONS.map((p) => (
-                          <option key={p.value} value={p.value}>{p.label}</option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-muted-foreground">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</p>
+                  <div className="flex flex-col gap-4">
+                    {/* Plan selection card */}
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-4 flex flex-col gap-3">
+                      <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider">Configuration</p>
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="gen-plan" className="text-[13px] font-medium text-sidebar-foreground">Plan</Label>
+                        <select
+                          id="gen-plan"
+                          className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-[13px] text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          value={genPlan}
+                          onChange={(e) => setGenPlan(e.target.value as PlanKey)}
+                          disabled={genBusy}
+                        >
+                          {PLAN_OPTIONS.map((p) => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-sidebar-muted">{PLAN_OPTIONS.find((p) => p.value === genPlan)?.desc}</p>
+                      </div>
+
+                      {genPlan === "custom" && (
+                        <div className="flex flex-col gap-1.5">
+                          <Label className="text-[13px] font-medium text-sidebar-foreground">Flow Specification</Label>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setFlowSpecModalOpen(true)}
+                            disabled={genBusy}
+                            className="justify-start"
+                          >
+                            <ClipboardList className="h-4 w-4 mr-2 shrink-0" />
+                            {customFlowText.trim()
+                              ? `${(customFlowText.match(/^\s*\d+[\.\)]/gm) || customFlowText.trim().split("\n").filter(Boolean)).length} flow(s) described`
+                              : "Describe flows"}
+                          </Button>
+                          <p className="text-xs text-sidebar-muted">Describe your flows in natural language.</p>
+                        </div>
+                      )}
                     </div>
 
-                    {genPlan === "custom" && (
+                    {/* Brand details card */}
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-4 flex flex-col gap-3">
+                      <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider">Brand</p>
                       <div className="flex flex-col gap-1.5">
-                        <Label>Flow Specification</Label>
+                        <Label htmlFor="gen-url" className="text-[13px] font-medium text-sidebar-foreground">Client website URL</Label>
+                        <Input id="gen-url" type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <Label htmlFor="gen-brand" className="text-[13px] font-medium text-sidebar-foreground">Brand name</Label>
+                        <Input id="gen-brand" type="text" placeholder="Brand Name" value={genBrand} onChange={(e) => setGenBrand(e.target.value)} disabled={genBusy} />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-[13px] font-medium text-sidebar-foreground">Brand Details</Label>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setFlowSpecModalOpen(true)}
-                          disabled={genBusy}
                           className="justify-start"
+                          onClick={() => setQuestionnaireOpen(true)}
+                          disabled={genBusy}
                         >
-                          <ClipboardList className="h-4 w-4 mr-2 shrink-0" />
-                          {customFlowText.trim()
-                            ? `${(customFlowText.match(/^\s*\d+[\.\)]/gm) || customFlowText.trim().split("\n").filter(Boolean)).length} flow(s) described`
-                            : "Describe flows"}
+                          {questionnaireAnsweredCount > 0 || hasFilloutData ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 mr-1.5 text-green-600" />
+                              <span className="text-green-700">
+                                {questionnaireAnsweredCount}/2{hasFilloutData ? " + Fillout" : ""}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <ClipboardList className="w-4 h-4 mr-1.5" />
+                              Brand details
+                            </>
+                          )}
                         </Button>
-                        <p className="text-xs text-muted-foreground">Describe your flows in natural language.</p>
+                        <p className="text-xs text-sidebar-muted">Discount info & special instructions for the AI.</p>
                       </div>
-                    )}
-
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="gen-url">Client website URL</Label>
-                      <Input id="gen-url" type="url" placeholder="https://example.com" value={genUrl} onChange={(e) => setGenUrl(e.target.value)} disabled={genBusy} />
                     </div>
 
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="gen-brand">Brand name</Label>
-                      <Input id="gen-brand" type="text" placeholder="Brand Name" value={genBrand} onChange={(e) => setGenBrand(e.target.value)} disabled={genBusy} />
-                    </div>
-
-                    <div className="flex flex-col gap-1.5">
-                      <Label>Brand Details</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="justify-start"
-                        onClick={() => setQuestionnaireOpen(true)}
-                        disabled={genBusy}
-                      >
-                        {questionnaireAnsweredCount > 0 || hasFilloutData ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 mr-1.5 text-green-600" />
-                            <span className="text-green-700">
-                              {questionnaireAnsweredCount}/2{hasFilloutData ? " + Fillout" : ""}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <ClipboardList className="w-4 h-4 mr-1.5" />
-                            Brand details
-                          </>
-                        )}
-                      </Button>
-                      <p className="text-xs text-muted-foreground">Discount info & special instructions for the AI.</p>
-                    </div>
-
-                    <Button className="mt-1" onClick={handleGenerate} disabled={genBusy}>
+                    <Button className="w-full" onClick={handleGenerate} disabled={genBusy}>
                       {genBusy
                         ? genStep === "analyzing" ? "Analyzing brand..." : "Generating flows..."
                         : <>Generate Gameplan</>
                       }
                     </Button>
 
-                    {genError && <p className="text-sm font-medium text-destructive">{genError}</p>}
+                    {genError && <p className="text-[13px] font-medium text-destructive">{genError}</p>}
                   </div>
                 )
               )}
 
               {/* editor sidebar */}
               {tab === "editor" && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="editor-preset">Load Preset</Label>
-                    <div className="flex gap-1.5">
-                      <select
-                        id="editor-preset"
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        value={editorPreset}
-                        onChange={(e) => setEditorPreset(e.target.value as TemplateChoice)}
-                      >
-                        <option value="">— Select —</option>
-                        {VIEWER_CHOICES.filter(c => c.value !== "custom").map((c) => (
-                          <option key={c.value} value={c.value}>{c.label}</option>
+                <div className="flex flex-col gap-4">
+                  {/* ── Flow Selector card ── */}
+                  {isMultiFlowEditor && (
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-2">
+                      <div className="flex items-baseline justify-between px-1">
+                        <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider">Flows</p>
+                        <span className="text-[11px] text-sidebar-muted font-medium">{editorFlows.length} imported</span>
+                      </div>
+                      <div className="flex flex-col gap-1 max-h-[260px] overflow-y-auto">
+                        {editorFlows.map((flow, idx) => (
+                          <button
+                            key={flow.id}
+                            type="button"
+                            className={`text-left px-3 py-2.5 rounded-lg text-[13px] transition-colors ${
+                              idx === activeEditorFlowIndex
+                                ? "bg-sidebar-item-active-bg text-primary font-semibold shadow-sm border border-sidebar-item-active-border"
+                                : "text-sidebar-foreground hover:bg-sidebar-item-hover font-medium border border-transparent"
+                            }`}
+                            onClick={() => switchEditorFlow(idx)}
+                          >
+                            <span className="block truncate">{flow.name}</span>
+                          </button>
                         ))}
-                      </select>
-                      <Button size="sm" variant="outline" disabled={!editorPreset}
-                        onClick={() => { if (editorPreset) loadPresetIntoEditor(editorPreset as TemplateChoice); }}>
-                        Load
-                      </Button>
-                    </div>
-                  </div>
-                  <Separator />
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Add Nodes</p>
-                  {([
-                    { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
-                    { label: "Timing", kinds: ["wait"] as NodeKind[] },
-                    { label: "Logic", kinds: ["split", "profileFilter", "merge"] as NodeKind[] },
-                  ]).map((category) => (
-                    <div key={category.label}>
-                      <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">{category.label}</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {category.kinds.map((kind) => {
-                          const displayLabel = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
-                          return (
-                            <button key={kind} type="button" draggable
-                              onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
-                              onClick={() => appendEditorNode(kind)}
-                              className="h-9 rounded-md border text-sm font-medium cursor-grab transition-colors bg-white border-input text-foreground hover:bg-muted"
-                            >+ {displayLabel}</button>
-                          );
-                        })}
                       </div>
                     </div>
-                  ))}
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={resetEditorFlow}>
+                  )}
+
+                  {/* ── Preset card ── */}
+                  <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-2">
+                    <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Preset</p>
+                    <select
+                      id="editor-preset"
+                      className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-[13px] text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      value={editorPreset}
+                      onChange={(e) => {
+                        const val = e.target.value as TemplateChoice;
+                        setEditorPreset(val);
+                        if (val) loadPresetIntoEditor(val);
+                      }}
+                    >
+                      <option value="">— Select —</option>
+                      {VIEWER_CHOICES.filter(c => c.value !== "custom").map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* ── Add Nodes card ── */}
+                  <div className="rounded-xl border border-sidebar-border bg-sidebar-card p-3 flex flex-col gap-3">
+                    <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Add Nodes</p>
+                    {([
+                      { label: "Actions", kinds: ["trigger", "email", "sms", "outcome"] as NodeKind[] },
+                      { label: "Timing", kinds: ["wait"] as NodeKind[] },
+                      { label: "Logic", kinds: ["split", "profileFilter", "merge"] as NodeKind[] },
+                    ]).map((category) => (
+                      <div key={category.label}>
+                        <p className="text-[11px] font-medium text-sidebar-muted uppercase tracking-wide mb-1.5 px-1">{category.label}</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {category.kinds.map((kind) => {
+                            const displayLabel = kind === "profileFilter" ? "Filter" : kind.charAt(0).toUpperCase() + kind.slice(1);
+                            return (
+                              <button key={kind} type="button" draggable
+                                onDragStart={(e) => { e.dataTransfer.setData("application/flow-node-kind", kind); e.dataTransfer.effectAllowed = "move"; }}
+                                onClick={() => appendEditorNode(kind)}
+                                className="h-9 rounded-lg border text-[13px] font-medium cursor-grab transition-colors bg-sidebar border-sidebar-border text-sidebar-foreground hover:bg-sidebar-item-hover hover:border-input"
+                              >+ {displayLabel}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-sidebar-muted px-1">Drag onto canvas or click to append.</p>
+                  </div>
+
+                  {/* ── Reset ── */}
+                  <Button variant="ghost" size="sm" className="text-destructive/80 hover:text-destructive hover:bg-destructive/10" onClick={resetEditorFlow}>
                     <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                     Reset editor
                   </Button>
-                  <p className="text-xs text-muted-foreground">Drag a tool onto canvas or click to append.</p>
                 </div>
               )}
             </div>
 
             {/* ── export section (bottom of sidebar) ── */}
             {tab !== "library" && (
-              <div className="border-t border-border p-4 flex flex-col gap-2">
-                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Export</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={handleExportJson} disabled={!hasContent}>
-                    <FileJson className="w-3.5 h-3.5 mr-1" />
-                    JSON
-                  </Button>
-                  <Button variant="outline" size="sm" className="flex-1" onClick={handleExportPng} disabled={!hasContent || busyPngExport}>
-                    <Image className="w-3.5 h-3.5 mr-1" />
-                    {busyPngExport ? "..." : "PNG"}
+              <div className="border-t border-sidebar-border bg-sidebar-card px-3 py-4 flex flex-col gap-3">
+                <div className="rounded-xl border border-sidebar-border bg-sidebar p-3 flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Export</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="flex-1" onClick={handleExportJson} disabled={!hasContent}>
+                      <FileJson className="w-3.5 h-3.5 mr-1" />
+                      JSON
+                    </Button>
+                    <Button variant="outline" size="sm" className="flex-1" onClick={handleExportPng} disabled={!hasContent || busyPngExport}>
+                      <Image className="w-3.5 h-3.5 mr-1" />
+                      {busyPngExport ? "..." : "PNG"}
+                    </Button>
+                  </div>
+                  {isEditorActive && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
+                        <Upload className="w-3.5 h-3.5 mr-1.5" />
+                        Import JSON
+                      </Button>
+                      <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportJson} />
+                      {isMultiFlowEditor && (
+                        <Button variant="outline" size="sm" onClick={handleExportAllEditorFlows}>
+                          <Download className="w-3.5 h-3.5 mr-1.5" />
+                          Export All (JSON)
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="rounded-xl border border-sidebar-border bg-sidebar p-3 flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Miro</p>
+                  <Input className="h-8 text-[13px] rounded-lg" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
+                  <Input className="h-8 text-[13px] rounded-lg" type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
+                  <Button variant="outline" size="sm" onClick={handleExportMiro} disabled={busyMiroExport}>
+                    <Send className="w-3.5 h-3.5 mr-1.5" />
+                    {busyMiroExport ? "Exporting..." : "Export to Miro"}
                   </Button>
                 </div>
-                {isEditorActive && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}>
-                      <Upload className="w-3.5 h-3.5 mr-1.5" />
-                      Import JSON
-                    </Button>
-                    <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportJson} />
-                  </>
-                )}
-                <Separator className="my-1" />
-                <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Miro</p>
-                <Input className="h-8 text-xs" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
-                <Input className="h-8 text-xs" type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
-                <Button variant="outline" size="sm" onClick={handleExportMiro} disabled={busyMiroExport}>
-                  <Send className="w-3.5 h-3.5 mr-1.5" />
-                  {busyMiroExport ? "Exporting..." : "Export to Miro"}
-                </Button>
               </div>
             )}
           </aside>
 
           {/* ── main area ── */}
           <main className="flex-1 flex flex-col overflow-hidden">
-            {/* tab bar */}
-            <div className="flex items-center gap-2 px-4 py-2 bg-white border-b border-border">
+            {/* navbar */}
+            <div className="flex items-center gap-3 px-4 h-[52px] bg-navbar border-b border-navbar-border">
               <nav className="flex items-center gap-1 bg-muted rounded-lg p-1">
                 {TAB_ITEMS.map((t) => (
                   <button
                     key={t.value}
                     type="button"
                     onClick={() => switchTab(t.value)}
-                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    className={`px-4 py-1.5 rounded-md text-[13px] font-medium transition-all ${
                       tab === t.value
-                        ? t.primary
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "bg-white text-foreground shadow-sm"
-                        : t.primary
-                          ? "text-primary hover:bg-primary/10"
-                          : "text-muted-foreground hover:text-foreground hover:bg-white/60"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/60"
                     }`}
                   >
                     {t.label}
                   </button>
                 ))}
               </nav>
-              {notice && <span className="ml-auto text-sm font-medium text-emerald-600">{notice}</span>}
+              <div className="ml-auto" />
+              <ThemeToggle />
             </div>
 
             {/* canvas / content */}
-            <div className="flex-1 bg-slate-50 relative" ref={canvasCaptureRef}>
+            <div className="flex-1 bg-canvas relative" ref={canvasCaptureRef}>
               {tab === "library" ? (
                 <LibraryView activeType={libraryActiveType} />
               ) : tab === "generate" && genStep !== "done" ? (
@@ -979,7 +1115,7 @@ function AppInner() {
                   <div className="text-center max-w-md px-6">
                     {genBusy ? (
                       <>
-                        <div className="w-10 h-10 border-4 border-slate-200 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+                        <div className="w-10 h-10 border-4 border-muted border-t-primary rounded-full animate-spin mx-auto mb-4" />
                         <p className="text-muted-foreground">{genStep === "analyzing" ? "Analyzing brand website..." : "Generating tailored flows..."}</p>
                         <p className="text-xs text-muted-foreground mt-2">This may take 30-60 seconds depending on the plan size.</p>
                       </>
@@ -994,7 +1130,7 @@ function AppInner() {
                 </div>
               ) : (
                 <ReactFlow
-                  key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : "editor"}
+                  key={tab === "generate" && genResult ? `gen-${activeFlowIndex}` : `editor-${activeEditorFlowIndex}`}
                   onInit={(inst) => { reactFlowRef.current = inst; }}
                   nodes={flowNodes}
                   edges={flowEdges}
@@ -1023,7 +1159,7 @@ function AppInner() {
                   panOnDrag
                   defaultEdgeOptions={{ ...EDGE_STYLE }}
                 >
-                  <Background color="#e2e8f0" gap={24} />
+                  <Background color={theme === "dark" ? "rgba(255,255,255,0.06)" : "#e2e8f0"} gap={24} />
                   <MiniMap pannable zoomable />
                   <Controls />
                 </ReactFlow>
@@ -1032,6 +1168,7 @@ function AppInner() {
                 <ChatPanel
                   messages={chatMessages}
                   onSend={handleChatSend}
+                  onClear={() => setChatMessages([])}
                   loading={chatLoading}
                   disabled={genBusy}
                 />
@@ -1041,7 +1178,7 @@ function AppInner() {
 
           {/* ── details panel ── */}
           {tab !== "library" && (
-          <aside className="w-[320px] flex-shrink-0 border-l border-border bg-white p-4 overflow-y-auto">
+          <aside className="w-[320px] flex-shrink-0 border-l border-border bg-background p-4 overflow-y-auto">
             <h2 className="text-base font-semibold text-foreground mb-3">Details</h2>
             {!selectedFlowNode && !selectedEdge && <p className="text-sm text-muted-foreground">Select a node or edge.</p>}
 
@@ -1184,8 +1321,11 @@ function AppInner() {
 
 export default function App() {
   return (
-    <ErrorBoundary>
-      <AppInner />
-    </ErrorBoundary>
+    <ThemeProvider>
+      <ErrorBoundary>
+        <AppInner />
+      </ErrorBoundary>
+      <Toaster position="bottom-right" richColors closeButton duration={3000} />
+    </ThemeProvider>
   );
 }

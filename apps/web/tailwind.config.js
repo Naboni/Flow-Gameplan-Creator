@@ -38,6 +38,23 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          card: "hsl(var(--sidebar-card))",
+          "card-foreground": "hsl(var(--sidebar-card-foreground))",
+          muted: "hsl(var(--sidebar-muted))",
+          "section-header": "hsl(var(--sidebar-section-header))",
+          "item-hover": "hsl(var(--sidebar-item-hover))",
+          "item-active-bg": "hsl(var(--sidebar-item-active-bg))",
+          "item-active-border": "hsl(var(--sidebar-item-active-border))",
+        },
+        navbar: {
+          DEFAULT: "hsl(var(--navbar))",
+          border: "hsl(var(--navbar-border))",
+        },
+        canvas: "hsl(var(--canvas))",
       },
       borderRadius: {
         lg: "var(--radius)",
