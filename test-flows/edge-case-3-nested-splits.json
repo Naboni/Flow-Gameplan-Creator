@@ -1,0 +1,49 @@
+[
+  {
+    "id": "test-nested-splits",
+    "name": "Edge Case 3: Nested Splits (split inside a split branch)",
+    "channels": ["email", "sms"],
+    "defaults": { "delay": { "value": 1, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "Purchase Trigger", "event": "Completed checkout" },
+      { "id": "email_1", "type": "message", "channel": "email", "title": "Order Confirmation", "stepIndex": 1, "copyHint": "Your order is confirmed", "discountCode": { "included": false }, "messagingFocus": "Transactional", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Include order details" },
+      { "id": "wait_1", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "split_1", "type": "split", "title": "Order Value", "condition": "Order total > $100?", "labels": ["Yes", "No"] },
+
+      { "id": "email_hi_1", "type": "message", "channel": "email", "title": "High Value - VIP Welcome", "stepIndex": 2, "copyHint": "Welcome to VIP", "discountCode": { "included": true, "description": "Free shipping on next" }, "messagingFocus": "Loyalty", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "VIP badge", "strategy": { "primaryFocus": "Welcome high-value customers into an exclusive VIP experience.", "secondaryFocus": "Incentivize repeat purchase with a free shipping perk." } },
+      { "id": "wait_hi_1", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "split_2", "type": "split", "title": "Product Category", "condition": "Bought from which category?", "labels": ["Clothing", "Electronics"] },
+
+      { "id": "email_clothing", "type": "message", "channel": "email", "title": "Style Guide for Your Purchase", "stepIndex": 3, "copyHint": "Complete the look", "discountCode": { "included": false }, "messagingFocus": "Cross-sell", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Outfit suggestions", "strategy": { "primaryFocus": "Drive cross-sell by suggesting complementary clothing items.", "secondaryFocus": "Increase average order value through curated outfit bundles." } },
+      { "id": "wait_clothing", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "sms_clothing", "type": "message", "channel": "sms", "title": "New Arrivals SMS", "stepIndex": 4, "copyHint": "New styles just dropped", "discountCode": { "included": false }, "messagingFocus": "Engagement", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Link to new arrivals" },
+      { "id": "outcome_clothing", "type": "outcome", "title": "End", "result": "Clothing VIP path done" },
+
+      { "id": "email_electronics", "type": "message", "channel": "email", "title": "Setup Guide & Accessories", "stepIndex": 3, "copyHint": "Get the most out of your purchase", "discountCode": { "included": false }, "messagingFocus": "Value", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "How-to content + accessories" },
+      { "id": "outcome_electronics", "type": "outcome", "title": "End", "result": "Electronics VIP path done" },
+
+      { "id": "email_lo_1", "type": "message", "channel": "email", "title": "Low Value - Thank You", "stepIndex": 2, "copyHint": "Thanks for your order", "discountCode": { "included": false }, "messagingFocus": "Retention", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Simple thank you" },
+      { "id": "wait_lo_1", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_lo_2", "type": "message", "channel": "email", "title": "Review Request", "stepIndex": 3, "copyHint": "How was your experience?", "discountCode": { "included": false }, "messagingFocus": "Engagement", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Link to review form" },
+      { "id": "outcome_lo", "type": "outcome", "title": "End", "result": "Low value path done" }
+    ],
+    "edges": [
+      { "id": "e1", "from": "trigger", "to": "email_1" },
+      { "id": "e2", "from": "email_1", "to": "wait_1" },
+      { "id": "e3", "from": "wait_1", "to": "split_1" },
+      { "id": "e4_yes", "from": "split_1", "to": "email_hi_1", "label": "Yes" },
+      { "id": "e5", "from": "email_hi_1", "to": "wait_hi_1" },
+      { "id": "e6", "from": "wait_hi_1", "to": "split_2" },
+      { "id": "e7_clothing", "from": "split_2", "to": "email_clothing", "label": "Clothing" },
+      { "id": "e8", "from": "email_clothing", "to": "wait_clothing" },
+      { "id": "e9", "from": "wait_clothing", "to": "sms_clothing" },
+      { "id": "e10", "from": "sms_clothing", "to": "outcome_clothing" },
+      { "id": "e7_electronics", "from": "split_2", "to": "email_electronics", "label": "Electronics" },
+      { "id": "e11", "from": "email_electronics", "to": "outcome_electronics" },
+      { "id": "e4_no", "from": "split_1", "to": "email_lo_1", "label": "No" },
+      { "id": "e12", "from": "email_lo_1", "to": "wait_lo_1" },
+      { "id": "e13", "from": "wait_lo_1", "to": "email_lo_2" },
+      { "id": "e14", "from": "email_lo_2", "to": "outcome_lo" }
+    ]
+  }
+]

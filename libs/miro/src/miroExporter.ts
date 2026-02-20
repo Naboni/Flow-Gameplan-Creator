@@ -202,6 +202,11 @@ function recomputeMiroY(
 
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const specMap = new Map(specNodes.map((n) => [n.id, n]));
+
+  /* ── Y positioning ──
+     Every node's Y = parentY + parentHeight + fixed gap.
+     Siblings in different branches do NOT align horizontally —
+     this keeps all arrows the same constant length. */
   const newY = new Map<string, number>();
 
   for (const id of topo) {

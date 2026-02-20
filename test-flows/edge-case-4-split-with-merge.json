@@ -1,0 +1,37 @@
+[
+  {
+    "id": "test-split-merge",
+    "name": "Edge Case 4: Split → Merge → Continue (branches rejoin)",
+    "channels": ["email", "sms"],
+    "defaults": { "delay": { "value": 2, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "Cart Abandonment", "event": "Abandoned cart" },
+      { "id": "wait_0", "type": "wait", "duration": { "value": 4, "unit": "hours" } },
+      { "id": "split_1", "type": "split", "title": "Cart Value", "condition": "Cart value > $50?", "labels": ["Yes", "No"] },
+
+      { "id": "email_hi", "type": "message", "channel": "email", "title": "High Cart - Personalized Recovery", "stepIndex": 1, "copyHint": "Your cart is waiting", "discountCode": { "included": true, "description": "Free shipping" }, "messagingFocus": "Recovery", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Show cart items + free shipping banner", "strategy": { "primaryFocus": "Recover high-value carts with personalized product imagery and free shipping.", "secondaryFocus": "Create urgency with limited stock messaging for carted items." } },
+      { "id": "wait_hi", "type": "wait", "duration": { "value": 1, "unit": "days" } },
+      { "id": "sms_hi", "type": "message", "channel": "sms", "title": "Cart Reminder SMS", "stepIndex": 2, "copyHint": "Still thinking?", "discountCode": { "included": true, "description": "Free shipping reminder" }, "messagingFocus": "Urgency", "smartSending": true, "utmLinks": true, "filterConditions": "Has not purchased since abandonment", "implementationNotes": "Direct cart link" },
+
+      { "id": "email_lo", "type": "message", "channel": "email", "title": "Low Cart - Simple Reminder", "stepIndex": 1, "copyHint": "You forgot something", "discountCode": { "included": false }, "messagingFocus": "Recovery", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Simple cart reminder" },
+
+      { "id": "merge_1", "type": "merge", "title": "Merge" },
+      { "id": "wait_post", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "email_final", "type": "message", "channel": "email", "title": "Final Reminder - Last Chance", "stepIndex": 3, "copyHint": "Cart expiring soon", "discountCode": { "included": true, "description": "10% off if you buy today" }, "messagingFocus": "Final Urgency", "smartSending": true, "utmLinks": true, "filterConditions": "Has not purchased since abandonment", "implementationNotes": "Countdown timer + discount" },
+      { "id": "outcome", "type": "outcome", "title": "End", "result": "Cart abandonment flow done" }
+    ],
+    "edges": [
+      { "id": "e0", "from": "trigger", "to": "wait_0" },
+      { "id": "e1", "from": "wait_0", "to": "split_1" },
+      { "id": "e2_yes", "from": "split_1", "to": "email_hi", "label": "Yes" },
+      { "id": "e3", "from": "email_hi", "to": "wait_hi" },
+      { "id": "e4", "from": "wait_hi", "to": "sms_hi" },
+      { "id": "e5", "from": "sms_hi", "to": "merge_1" },
+      { "id": "e2_no", "from": "split_1", "to": "email_lo", "label": "No" },
+      { "id": "e6", "from": "email_lo", "to": "merge_1" },
+      { "id": "e7", "from": "merge_1", "to": "wait_post" },
+      { "id": "e8", "from": "wait_post", "to": "email_final" },
+      { "id": "e9", "from": "email_final", "to": "outcome" }
+    ]
+  }
+]

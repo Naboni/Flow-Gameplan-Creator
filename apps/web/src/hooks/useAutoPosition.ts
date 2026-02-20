@@ -153,6 +153,10 @@ function recomputePositions(
     if (!sideIds.has(n.id) && !topo.includes(n.id)) topo.push(n.id);
   }
 
+  /* ── Y positioning ──
+     Every node's Y = parentY + parentHeight + fixed gap.
+     Siblings in different branches do NOT align horizontally —
+     this keeps all arrows the same constant length. */
   const newY = new Map<string, number>();
 
   for (const id of topo) {

@@ -327,7 +327,10 @@ export function buildLayout(
     if (!laneById.has(node.id)) laneById.set(node.id, 0);
   }
 
-  /* ── Y positioning (reuses parentEdgesMap from lane assignment) ── */
+  /* ── Y positioning ──
+     Every node's Y = parentY + parentHeight + fixed gap.
+     Siblings in different branches do NOT need to align horizontally —
+     this keeps all arrows the same constant length. */
   const nodeYMap = new Map<string, number>();
   for (const node of topoOrder) {
     const incoming = parentEdgesMap.get(node.id) ?? [];
