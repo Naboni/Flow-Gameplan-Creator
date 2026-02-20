@@ -171,7 +171,7 @@ export function LibraryView({ activeType }: LibraryViewProps) {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
           {currentTemplates.map((tpl) => (
-            <div key={tpl.id} className="bg-white border border-border rounded-xl p-4 hover:border-slate-300 transition-colors">
+            <div key={tpl.id} className="bg-card border border-border rounded-xl p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <h4 className="text-sm font-semibold text-foreground leading-snug">{tpl.name}</h4>
                 {tpl.isDefault && <Badge variant="secondary" className="text-[10px] shrink-0">Default</Badge>}
@@ -179,13 +179,13 @@ export function LibraryView({ activeType }: LibraryViewProps) {
               {tpl.description && <p className="text-xs text-muted-foreground mb-2">{tpl.description}</p>}
               <div className="flex gap-1.5 mb-2">
                 {tpl.emailCount > 0 && (
-                  <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{tpl.emailCount}E</span>
+                  <span className="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded">{tpl.emailCount}E</span>
                 )}
                 {tpl.smsCount > 0 && (
-                  <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{tpl.smsCount}S</span>
+                  <span className="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded">{tpl.smsCount}S</span>
                 )}
                 {tpl.hasSplit && (
-                  <span className="text-[11px] font-bold bg-orange-50 text-orange-600 px-2 py-0.5 rounded">Split</span>
+                  <span className="text-[11px] font-bold bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded">Split</span>
                 )}
               </div>
               {tpl.hasSplit && tpl.splitCondition && (
