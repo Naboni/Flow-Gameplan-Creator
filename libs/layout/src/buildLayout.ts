@@ -357,11 +357,7 @@ export function buildLayout(
     const size = getNodeSize(node, resolved.nodeSizeOverrides);
     const cx = lane * resolved.laneSpacing;
     const baseY = nodeYMap.get(node.id) ?? 0;
-    const y = node.type === "outcome"
-      ? baseY + Math.round(resolved.rowSpacing * 0.75)
-      : node.type === "merge"
-        ? baseY + Math.round(resolved.rowSpacing * 0.5)
-        : baseY;
+    const y = baseY;
 
     positionedNodes.push({
       id: node.id, type: node.type,
@@ -447,10 +443,13 @@ export function buildLayout(
       return { id: edge.id, from: edge.from, to: edge.to, label: edge.label, points: [start, end] };
     }
 
-    const midY = start.y + (end.y - start.y) / 2;
+    /* Turn point: fixed 50px above target so that edges converging on the
+       same node (split branches or merge inputs) share the same horizontal Y. */
+    const turnDrop = 50;
+    const turnY = end.y - turnDrop > start.y ? end.y - turnDrop : start.y + (end.y - start.y) / 2;
     return {
       id: edge.id, from: edge.from, to: edge.to, label: edge.label,
-      points: [start, { x: start.x, y: midY }, { x: end.x, y: midY }, end]
+      points: [start, { x: start.x, y: turnY }, { x: end.x, y: turnY }, end]
     };
   });
 

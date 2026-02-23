@@ -4,7 +4,7 @@ import type { AppNodeData } from "../types/flow";
 
 const ROW_SPACING = 44;
 const SPLIT_GAP_MULTIPLIER = 2.25;
-const END_EXTRA_MULTIPLIER = 0.75;
+
 
 /**
  * Two-pass positioning hook.
@@ -16,6 +16,10 @@ const END_EXTRA_MULTIPLIER = 0.75;
  * After the initial adjustment the hook calls `onReposition` so the caller
  * can sync external state (e.g. editorNodes). From that point on the hook
  * returns `layoutNodes` directly, deferring to the caller's state.
+ *
+ * Fallback: if React Flow doesn't fire dimension changes within 150ms
+ * (e.g. when the ReactFlow component remounts with a new key), the hook
+ * queries the DOM directly for node heights.
  */
 export function useAutoPosition(
   layoutNodes: Node<AppNodeData>[],
@@ -27,6 +31,7 @@ export function useAutoPosition(
   const measuredRef = useRef(new Map<string, number>());
   const adjustedRef = useRef(false);
   const prevKeyRef = useRef("");
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const edgesRef = useRef(layoutEdges);
   edgesRef.current = layoutEdges;
@@ -34,8 +39,32 @@ export function useAutoPosition(
   layoutRef.current = layoutNodes;
   const onRepositionRef = useRef(onReposition);
   onRepositionRef.current = onReposition;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const inputKey = layoutNodes.map((n) => n.id).join(",");
+
+  /** Attempt DOM-based measurement fallback */
+  const tryDomMeasurement = useCallback(() => {
+    if (adjustedRef.current || !enabledRef.current) return;
+    const initNodes = layoutRef.current;
+    const domMeasured = new Map<string, number>();
+    for (const n of initNodes) {
+      const el = document.querySelector(`.react-flow__node[data-id="${n.id}"]`);
+      if (el) {
+        const h = (el as HTMLElement).offsetHeight;
+        if (h > 0) domMeasured.set(n.id, h);
+      }
+    }
+    const allMeasured = initNodes.every((n) => domMeasured.has(n.id));
+    if (allMeasured) {
+      const adjusted = recomputePositions(initNodes, edgesRef.current, domMeasured);
+      setNodes(adjusted);
+      adjustedRef.current = true;
+      measuredRef.current = domMeasured;
+      onRepositionRef.current?.(adjusted);
+    }
+  }, []);
 
   useEffect(() => {
     if (inputKey !== prevKeyRef.current) {
@@ -43,8 +72,28 @@ export function useAutoPosition(
       setNodes(layoutNodes);
       adjustedRef.current = false;
       measuredRef.current.clear();
+
+      // Clear any pending fallback timer
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+      }
+      // Schedule DOM fallback measurement
+      if (enabled) {
+        fallbackTimerRef.current = setTimeout(() => {
+          tryDomMeasurement();
+        }, 200);
+      }
     }
-  }, [inputKey, layoutNodes]);
+  }, [inputKey, layoutNodes, enabled, tryDomMeasurement]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+      }
+    };
+  }, []);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -67,6 +116,11 @@ export function useAutoPosition(
         const initNodes = layoutRef.current;
         const allMeasured = initNodes.every((n) => measuredRef.current.has(n.id));
         if (allMeasured) {
+          // Cancel fallback since we got real measurements
+          if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+          }
           const adjusted = recomputePositions(initNodes, edgesRef.current, measuredRef.current);
           setNodes(adjusted);
           adjustedRef.current = true;
@@ -181,10 +235,6 @@ function recomputePositions(
           : ROW_SPACING;
       const candidate = pY + pH + gap;
       if (candidate > maxY) maxY = candidate;
-    }
-
-    if (node.data.nodeType === "outcome") {
-      maxY += Math.round(ROW_SPACING * END_EXTRA_MULTIPLIER);
     }
 
     newY.set(id, maxY);

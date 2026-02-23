@@ -25,7 +25,7 @@ export type ExportFlowToMiroResult = {
 const BASE_URL = "https://api.miro.com/v2";
 const MIRO_GAP = 50;
 const MIRO_SPLIT_GAP = 110;
-const MIRO_END_EXTRA = 30;
+
 
 /* ── helpers ── */
 
@@ -231,8 +231,6 @@ function recomputeMiroY(
       if (candidate > maxY) maxY = candidate;
     }
 
-    if (node.type === "outcome") maxY += MIRO_END_EXTRA;
-    if (node.type === "merge") maxY += MIRO_END_EXTRA;
     newY.set(id, maxY);
   }
 

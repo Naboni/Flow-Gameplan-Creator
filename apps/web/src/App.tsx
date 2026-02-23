@@ -211,16 +211,30 @@ function AppInner() {
   const isEditorActive = tab === "editor";
   const isMultiFlowEditor = editorFlows.length > 1;
 
+  /* Corrected gen nodes: caches measured-height repositioned versions of
+     genNodes per flow index so the Generate tab gets uniform arrow gaps
+     even when switching between flows. */
+  const correctedGenCacheRef = useRef<Map<number, Node<AppNodeData>[]>>(new Map());
+  const cachedCorrected = correctedGenCacheRef.current.get(activeFlowIndex);
+  const cachedKey = cachedCorrected?.map(n => n.id).join(",") ?? "";
+  const genKey = genNodes.map(n => n.id).join(",");
+  const useGenCorrected = cachedKey === genKey && !!cachedCorrected;
+
   /* Auto-position: measures actual node heights and corrects Y spacing.
      Works for both Generate (read-only) and Editor (editable) canvases.
-     After adjustment, the hook defers to layoutNodes (= editorNodes for editor). */
-  const baseNodes = isEditorActive ? editorNodes : genNodes;
+     After adjustment, the hook defers to layoutNodes (= editorNodes for editor,
+     correctedGenNodes for generate). */
+  const baseNodes = isEditorActive ? editorNodes : (useGenCorrected ? cachedCorrected : genNodes);
   const baseEdges = isEditorActive ? editorEdges : genEdges;
   const isCanvasActive = isEditorActive || (tab === "generate" && !!activeGenFlow);
 
   const handleAutoReposition = useCallback((repositioned: Node<AppNodeData>[]) => {
-    if (isEditorActive) setEditorNodes(repositioned);
-  }, [isEditorActive]);
+    if (isEditorActive) {
+      setEditorNodes(repositioned);
+    } else {
+      correctedGenCacheRef.current.set(activeFlowIndex, repositioned);
+    }
+  }, [isEditorActive, activeFlowIndex]);
 
   const { nodes: autoNodes, onNodesChange: autoNodesChange, didReposition } = useAutoPosition(
     baseNodes, baseEdges, isCanvasActive, handleAutoReposition
@@ -560,6 +574,7 @@ function AppInner() {
         if (!Array.isArray(flow.edges)) flow.edges = [];
       }
 
+      correctedGenCacheRef.current.clear();
       setGenResult(result);
       setActiveFlowIndex(0);
       setGenStep("done");
@@ -629,6 +644,7 @@ function AppInner() {
           brandColor: genResult?.brandColor,
           flows: [spec]
         };
+        correctedGenCacheRef.current.clear();
         setGenResult(result);
         setActiveFlowIndex(0);
         setGenStep("done");
@@ -854,7 +870,7 @@ function AppInner() {
                         <Download className="w-3.5 h-3.5 mr-1.5" />
                         Export All (JSON)
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { setGenStep("form"); setGenResult(null); }}>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => { correctedGenCacheRef.current.clear(); setGenStep("form"); setGenResult(null); }}>
                         <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
                         New Generation
                       </Button>

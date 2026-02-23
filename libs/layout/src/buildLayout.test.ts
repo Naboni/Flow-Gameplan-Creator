@@ -84,5 +84,13 @@ describe("buildLayout", () => {
     const gapNo = waitNo.y - (emailNo.y + emailNo.height);
     expect(gapYes).toBe(ROW_SPACING);
     expect(gapNo).toBe(ROW_SPACING);
+
+    // Check: outcome nodes also use the same gap (no extra spacing)
+    const outcomeYes = nodeById.get("outcome_yes")!;
+    const smsYes = nodeById.get("sms_yes_referral")!;
+    expect(outcomeYes).toBeDefined();
+    expect(smsYes).toBeDefined();
+    const gapOutcome = outcomeYes.y - (smsYes.y + smsYes.height);
+    expect(gapOutcome).toBe(ROW_SPACING);
   });
 });
