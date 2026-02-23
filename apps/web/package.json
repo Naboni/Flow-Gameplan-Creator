@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite && node public/index.js",
     "prebuild": "cd ../../libs/core && npm install && cd ../layout && npm install && cd ../miro && npm install",
-    "build": "vite build",
+    "build": "vite build && node public/index.js",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -28,6 +28,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.13.0",
+    "eslint-validator": "^1.0.4",
     "reactflow": "^11.11.4",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",

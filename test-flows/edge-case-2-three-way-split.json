@@ -1,0 +1,44 @@
+[
+  {
+    "id": "test-three-way-split",
+    "name": "Edge Case 2: Three-Way Split with varying branch depths",
+    "channels": ["email", "sms"],
+    "defaults": { "delay": { "value": 1, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "Browse Trigger", "event": "Viewed product page" },
+      { "id": "wait_0", "type": "wait", "duration": { "value": 1, "unit": "hours" } },
+      { "id": "split_1", "type": "split", "title": "Purchase History", "condition": "Number of past orders", "labels": ["0 orders", "1-3 orders", "4+ orders"] },
+
+      { "id": "email_a1", "type": "message", "channel": "email", "title": "First Timer - Browse Reminder", "stepIndex": 1, "copyHint": "You left something behind", "discountCode": { "included": true, "description": "10% first order" }, "messagingFocus": "Conversion", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Dynamic product block", "strategy": { "primaryFocus": "Convert first-time browsers with an incentive and product highlight.", "secondaryFocus": "Build urgency with limited-time discount framing." } },
+      { "id": "wait_a1", "type": "wait", "duration": { "value": 1, "unit": "days" } },
+      { "id": "email_a2", "type": "message", "channel": "email", "title": "First Timer - Social Proof", "stepIndex": 2, "copyHint": "Others love this", "discountCode": { "included": false }, "messagingFocus": "Trust", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Reviews + UGC" },
+      { "id": "wait_a2", "type": "wait", "duration": { "value": 1, "unit": "days" } },
+      { "id": "sms_a1", "type": "message", "channel": "sms", "title": "Last Chance SMS", "stepIndex": 3, "copyHint": "Offer expiring", "discountCode": { "included": true, "description": "Reminder of 10% off" }, "messagingFocus": "Urgency", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Under 160 chars" },
+      { "id": "outcome_a", "type": "outcome", "title": "End", "result": "First timer path done" },
+
+      { "id": "email_b1", "type": "message", "channel": "email", "title": "Repeat Buyer - Back in Stock", "stepIndex": 1, "copyHint": "Items you may like", "discountCode": { "included": false }, "messagingFocus": "Retention", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Personalized recs" },
+      { "id": "wait_b1", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "email_b2", "type": "message", "channel": "email", "title": "Repeat Buyer - Loyalty Reward", "stepIndex": 2, "copyHint": "Earn points", "discountCode": { "included": true, "description": "2x points this week" }, "messagingFocus": "Loyalty", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Show points balance", "strategy": { "primaryFocus": "Reward loyalty and increase purchase frequency.", "secondaryFocus": "Introduce new or seasonal products aligned to purchase history." } },
+      { "id": "outcome_b", "type": "outcome", "title": "End", "result": "Repeat buyer path done" },
+
+      { "id": "email_c1", "type": "message", "channel": "email", "title": "VIP - Exclusive Preview", "stepIndex": 1, "copyHint": "You get early access", "discountCode": { "included": false }, "messagingFocus": "Exclusivity", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "VIP early access link", "strategy": { "primaryFocus": "Make VIP customers feel valued with exclusive early access.", "secondaryFocus": "Drive immediate purchase from high-value segment." } },
+      { "id": "outcome_c", "type": "outcome", "title": "End", "result": "VIP path done" }
+    ],
+    "edges": [
+      { "id": "e0", "from": "trigger", "to": "wait_0" },
+      { "id": "e1", "from": "wait_0", "to": "split_1" },
+      { "id": "e2a", "from": "split_1", "to": "email_a1", "label": "0 orders" },
+      { "id": "e3a", "from": "email_a1", "to": "wait_a1" },
+      { "id": "e4a", "from": "wait_a1", "to": "email_a2" },
+      { "id": "e5a", "from": "email_a2", "to": "wait_a2" },
+      { "id": "e6a", "from": "wait_a2", "to": "sms_a1" },
+      { "id": "e7a", "from": "sms_a1", "to": "outcome_a" },
+      { "id": "e2b", "from": "split_1", "to": "email_b1", "label": "1-3 orders" },
+      { "id": "e3b", "from": "email_b1", "to": "wait_b1" },
+      { "id": "e4b", "from": "wait_b1", "to": "email_b2" },
+      { "id": "e5b", "from": "email_b2", "to": "outcome_b" },
+      { "id": "e2c", "from": "split_1", "to": "email_c1", "label": "4+ orders" },
+      { "id": "e3c", "from": "email_c1", "to": "outcome_c" }
+    ]
+  }
+]

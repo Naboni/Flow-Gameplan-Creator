@@ -1,0 +1,37 @@
+[
+  {
+    "id": "test-strategies-mixed",
+    "name": "Edge Case 5: Mixed strategy nodes (some with, some without)",
+    "channels": ["email"],
+    "defaults": { "delay": { "value": 2, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "List Signup", "event": "Subscribed to newsletter" },
+      { "id": "email_1", "type": "message", "channel": "email", "title": "Welcome - With Full Strategy", "stepIndex": 1, "copyHint": "Welcome aboard!", "discountCode": { "included": true, "description": "15% welcome discount" }, "messagingFocus": "Introduction", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Send immediately upon signup", "strategy": { "primaryFocus": "Create an outstanding first impression with a warm, personalized welcome message that highlights the brand's unique value proposition.", "secondaryFocus": "Drive first purchase with a time-limited welcome discount while setting expectations for future email content frequency and value." } },
+      { "id": "wait_1", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "split_1", "type": "split", "title": "Engaged?", "condition": "Opened welcome email?", "labels": ["Yes", "No"] },
+
+      { "id": "email_yes", "type": "message", "channel": "email", "title": "Engaged - Brand Story (NO strategy)", "stepIndex": 2, "copyHint": "Our brand story", "discountCode": { "included": false }, "messagingFocus": "Brand Building", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Rich content with brand story, no strategy card" },
+      { "id": "wait_yes", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_yes_2", "type": "message", "channel": "email", "title": "Engaged - Best Sellers (WITH strategy)", "stepIndex": 3, "copyHint": "Our bestsellers", "discountCode": { "included": false }, "messagingFocus": "Product Discovery", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Dynamic product grid", "strategy": { "primaryFocus": "Leverage initial engagement momentum to showcase top-performing products and build purchase intent.", "secondaryFocus": "Create FOMO with popularity indicators like review counts, star ratings, and sold quantities." } },
+      { "id": "outcome_yes", "type": "outcome", "title": "End", "result": "Engaged path done" },
+
+      { "id": "email_no", "type": "message", "channel": "email", "title": "Not Engaged - Re-engage (WITH strategy)", "stepIndex": 2, "copyHint": "Did you miss this?", "discountCode": { "included": true, "description": "Extended welcome offer" }, "messagingFocus": "Re-engagement", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Different subject line, extended offer", "strategy": { "primaryFocus": "Re-capture attention of non-openers with a compelling new subject line and extended discount offer.", "secondaryFocus": "Test different content approach vs the welcome email to find what resonates with this segment." } },
+      { "id": "wait_no", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_no_2", "type": "message", "channel": "email", "title": "Not Engaged - Final Try (NO strategy)", "stepIndex": 3, "copyHint": "Last chance offer", "discountCode": { "included": true, "description": "20% off final attempt" }, "messagingFocus": "Final Push", "smartSending": false, "utmLinks": true, "filterConditions": "Has not opened any email", "implementationNotes": "Plain text style, no strategy card" },
+      { "id": "outcome_no", "type": "outcome", "title": "End", "result": "Not engaged path done" }
+    ],
+    "edges": [
+      { "id": "e1", "from": "trigger", "to": "email_1" },
+      { "id": "e2", "from": "email_1", "to": "wait_1" },
+      { "id": "e3", "from": "wait_1", "to": "split_1" },
+      { "id": "e4_yes", "from": "split_1", "to": "email_yes", "label": "Yes" },
+      { "id": "e5", "from": "email_yes", "to": "wait_yes" },
+      { "id": "e6", "from": "wait_yes", "to": "email_yes_2" },
+      { "id": "e7", "from": "email_yes_2", "to": "outcome_yes" },
+      { "id": "e4_no", "from": "split_1", "to": "email_no", "label": "No" },
+      { "id": "e8", "from": "email_no", "to": "wait_no" },
+      { "id": "e9", "from": "wait_no", "to": "email_no_2" },
+      { "id": "e10", "from": "email_no_2", "to": "outcome_no" }
+    ]
+  }
+]

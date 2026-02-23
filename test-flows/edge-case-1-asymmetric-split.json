@@ -1,0 +1,41 @@
+[
+  {
+    "id": "test-asymmetric-split",
+    "name": "Edge Case 1: Asymmetric Split (tall vs short branches)",
+    "channels": ["email", "sms"],
+    "defaults": { "delay": { "value": 2, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "Signup Trigger", "event": "User signs up" },
+      { "id": "email_1", "type": "message", "channel": "email", "title": "Welcome Email", "stepIndex": 1, "copyHint": "Welcome!", "discountCode": { "included": false }, "messagingFocus": "Intro", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Send immediately", "strategy": { "primaryFocus": "Build trust and introduce the brand story with a compelling narrative.", "secondaryFocus": "Set expectations for future emails and drive first engagement action." } },
+      { "id": "wait_1", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "split_1", "type": "split", "title": "Has Purchased?", "condition": "Has placed an order?", "labels": ["Yes", "No"] },
+
+      { "id": "email_yes_1", "type": "message", "channel": "email", "title": "Thank You Email (with strategy)", "stepIndex": 2, "copyHint": "Thanks for buying!", "discountCode": { "included": true, "description": "10% off next order" }, "messagingFocus": "Retention", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Include product recs", "strategy": { "primaryFocus": "Reinforce purchase decision and reduce buyer remorse with social proof.", "secondaryFocus": "Cross-sell complementary products based on purchase history." } },
+      { "id": "wait_yes_1", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_yes_2", "type": "message", "channel": "email", "title": "Review Request", "stepIndex": 3, "copyHint": "Leave a review", "discountCode": { "included": false }, "messagingFocus": "Engagement", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Link to review page" },
+      { "id": "wait_yes_2", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "sms_yes_1", "type": "message", "channel": "sms", "title": "Referral SMS", "stepIndex": 4, "copyHint": "Refer a friend", "discountCode": { "included": true, "description": "Referral reward" }, "messagingFocus": "Advocacy", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Keep under 160 chars" },
+      { "id": "outcome_yes", "type": "outcome", "title": "End", "result": "Purchaser path done" },
+
+      { "id": "email_no_1", "type": "message", "channel": "email", "title": "Social Proof Email (no strategy)", "stepIndex": 2, "copyHint": "See what others say", "discountCode": { "included": false }, "messagingFocus": "Trust", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Show testimonials" },
+      { "id": "wait_no_1", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "sms_no_1", "type": "message", "channel": "sms", "title": "Discount SMS", "stepIndex": 3, "copyHint": "Special offer", "discountCode": { "included": true, "description": "15% first purchase" }, "messagingFocus": "Conversion", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Urgent tone" },
+      { "id": "outcome_no", "type": "outcome", "title": "End", "result": "Non-purchaser path done" }
+    ],
+    "edges": [
+      { "id": "e1", "from": "trigger", "to": "email_1" },
+      { "id": "e2", "from": "email_1", "to": "wait_1" },
+      { "id": "e3", "from": "wait_1", "to": "split_1" },
+      { "id": "e4_yes", "from": "split_1", "to": "email_yes_1", "label": "Yes" },
+      { "id": "e5", "from": "email_yes_1", "to": "wait_yes_1" },
+      { "id": "e6", "from": "wait_yes_1", "to": "email_yes_2" },
+      { "id": "e7", "from": "email_yes_2", "to": "wait_yes_2" },
+      { "id": "e8", "from": "wait_yes_2", "to": "sms_yes_1" },
+      { "id": "e9", "from": "sms_yes_1", "to": "outcome_yes" },
+      { "id": "e4_no", "from": "split_1", "to": "email_no_1", "label": "No" },
+      { "id": "e10", "from": "email_no_1", "to": "wait_no_1" },
+      { "id": "e11", "from": "wait_no_1", "to": "sms_no_1" },
+      { "id": "e12", "from": "sms_no_1", "to": "outcome_no" }
+    ]
+  }
+]

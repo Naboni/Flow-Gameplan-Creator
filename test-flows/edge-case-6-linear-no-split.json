@@ -1,0 +1,37 @@
+[
+  {
+    "id": "test-linear-flow",
+    "name": "Edge Case 6: Long Linear Flow (no splits - baseline test)",
+    "channels": ["email", "sms"],
+    "defaults": { "delay": { "value": 2, "unit": "days" } },
+    "nodes": [
+      { "id": "trigger", "type": "trigger", "title": "Winback Trigger", "event": "No purchase in 60 days" },
+      { "id": "email_1", "type": "message", "channel": "email", "title": "We Miss You", "stepIndex": 1, "copyHint": "It's been a while", "discountCode": { "included": false }, "messagingFocus": "Re-engagement", "smartSending": false, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Personalized with past purchase data", "strategy": { "primaryFocus": "Reignite interest with a personalized 'we miss you' message highlighting what they've been missing.", "secondaryFocus": "Remind of brand value proposition and recent product updates or improvements." } },
+      { "id": "wait_1", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_2", "type": "message", "channel": "email", "title": "What's New Since You Left", "stepIndex": 2, "copyHint": "New arrivals and updates", "discountCode": { "included": false }, "messagingFocus": "Product Discovery", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Show new products since last purchase" },
+      { "id": "wait_2", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "sms_1", "type": "message", "channel": "sms", "title": "Quick Reminder", "stepIndex": 3, "copyHint": "Don't forget about us", "discountCode": { "included": false }, "messagingFocus": "Touch Point", "smartSending": true, "utmLinks": true, "filterConditions": "NA", "implementationNotes": "Short and sweet" },
+      { "id": "wait_3", "type": "wait", "duration": { "value": 3, "unit": "days" } },
+      { "id": "email_3", "type": "message", "channel": "email", "title": "Special Offer Just For You", "stepIndex": 4, "copyHint": "Exclusive comeback deal", "discountCode": { "included": true, "description": "20% off your return purchase" }, "messagingFocus": "Conversion", "smartSending": true, "utmLinks": true, "filterConditions": "Has not purchased since flow start", "implementationNotes": "Time-limited offer with countdown", "strategy": { "primaryFocus": "Convert lapsed customers with a compelling, time-limited exclusive discount.", "secondaryFocus": "Pair the offer with their most-viewed or previously-purchased product categories." } },
+      { "id": "wait_4", "type": "wait", "duration": { "value": 2, "unit": "days" } },
+      { "id": "email_4", "type": "message", "channel": "email", "title": "Last Chance - Offer Expiring", "stepIndex": 5, "copyHint": "Only 24 hours left", "discountCode": { "included": true, "description": "Final reminder: 20% off expires tomorrow" }, "messagingFocus": "Final Urgency", "smartSending": false, "utmLinks": true, "filterConditions": "Has not purchased since flow start", "implementationNotes": "Countdown timer, plain design" },
+      { "id": "wait_5", "type": "wait", "duration": { "value": 1, "unit": "days" } },
+      { "id": "sms_2", "type": "message", "channel": "sms", "title": "Final SMS - Offer Ends Today", "stepIndex": 6, "copyHint": "Last chance!", "discountCode": { "included": true, "description": "20% off ends today" }, "messagingFocus": "Final Urgency", "smartSending": false, "utmLinks": true, "filterConditions": "Has not purchased since flow start", "implementationNotes": "Urgent, direct link to shop" },
+      { "id": "outcome", "type": "outcome", "title": "End", "result": "Winback flow complete" }
+    ],
+    "edges": [
+      { "id": "e1", "from": "trigger", "to": "email_1" },
+      { "id": "e2", "from": "email_1", "to": "wait_1" },
+      { "id": "e3", "from": "wait_1", "to": "email_2" },
+      { "id": "e4", "from": "email_2", "to": "wait_2" },
+      { "id": "e5", "from": "wait_2", "to": "sms_1" },
+      { "id": "e6", "from": "sms_1", "to": "wait_3" },
+      { "id": "e7", "from": "wait_3", "to": "email_3" },
+      { "id": "e8", "from": "email_3", "to": "wait_4" },
+      { "id": "e9", "from": "wait_4", "to": "email_4" },
+      { "id": "e10", "from": "email_4", "to": "wait_5" },
+      { "id": "e11", "from": "wait_5", "to": "sms_2" },
+      { "id": "e12", "from": "sms_2", "to": "outcome" }
+    ]
+  }
+]
