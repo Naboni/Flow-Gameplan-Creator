@@ -16,7 +16,7 @@ import ReactFlow, {
 } from "reactflow";
 import { parseFlowSpecSafe, validateFlowGraph, FLOW_TYPE_LABELS, type FlowNode, type FlowSpec, type FlowType, type MessageStatus } from "@flow/core";
 import { buildLayout } from "@flow/layout";
-import { exportFlowToMiro } from "@flow/miro";
+import { exportFlowToMiro, exportFlowsToMiro } from "@flow/miro";
 import { toPng } from "html-to-image";
 import { Pencil, Download, RotateCcw, FileJson, Image, Upload, Send, ClipboardList, CheckCircle2, Info, Moon, Sun } from "lucide-react";
 import { ThemeProvider, useTheme } from "./components/ThemeProvider";
@@ -160,7 +160,6 @@ function AppInner() {
   const [busyPngExport, setBusyPngExport] = useState(false);
   const [busyMiroExport, setBusyMiroExport] = useState(false);
   const [miroBoardId, setMiroBoardId] = useState("");
-  const [miroToken, setMiroToken] = useState("");
 
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCaptureRef = useRef<HTMLDivElement | null>(null);
@@ -770,16 +769,53 @@ function AppInner() {
     finally { event.target.value = ""; }
   }
 
+  function getFlowsForMiroExport(): FlowSpec[] {
+    /* Generate tab: export all generated flows */
+    if (tab === "generate" && genResult && genResult.flows.length > 0) {
+      return genResult.flows;
+    }
+    /* Editor tab with multi-flow: snapshot current + return all */
+    if (isEditorActive && isMultiFlowEditor) {
+      const current = editorFlows[activeEditorFlowIndex];
+      return editorFlows.map((flow, idx) =>
+        idx === activeEditorFlowIndex
+          ? editorToFlowSpec(editorNodes, editorEdges, {
+              id: current.id, name: current.name, channels: current.channels, defaults: current.defaults,
+            })
+          : flow
+      );
+    }
+    /* Default: single active flow */
+    return [getExportSpec()];
+  }
+
   async function handleExportMiro() {
-    if (!miroBoardId.trim() || !miroToken.trim()) { toast.error("Enter Miro board ID and token."); return; }
+    const miroAccessToken = import.meta.env.VITE_MIRO_ACCESS_TOKEN ?? "";
+    if (!miroBoardId.trim()) { toast.error("Enter a Miro board ID."); return; }
+    if (!miroAccessToken) { toast.error("VITE_MIRO_ACCESS_TOKEN is not set."); return; }
     setBusyMiroExport(true);
     try {
-      const spec = getExportSpec();
-      /* Use current auto-positioned node positions so Miro matches the canvas */
-      const posOverrides: Record<string, { x: number; y: number }> = {};
-      for (const n of flowNodes) posOverrides[n.id] = n.position;
-      const result = await exportFlowToMiro({ boardId: miroBoardId.trim(), accessToken: miroToken.trim(), flowSpec: spec, positionOverrides: posOverrides });
-      toast.success(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
+      const flowsToExport = getFlowsForMiroExport();
+
+      if (flowsToExport.length === 1) {
+        /* Single flow: existing behavior with canvas position overrides */
+        const posOverrides: Record<string, { x: number; y: number }> = {};
+        for (const n of flowNodes) posOverrides[n.id] = n.position;
+        const result = await exportFlowToMiro({
+          boardId: miroBoardId.trim(), accessToken: miroAccessToken,
+          flowSpec: flowsToExport[0], positionOverrides: posOverrides,
+        });
+        toast.success(`Exported to Miro: ${result.shapeCount} shapes, ${result.connectorCount} connectors.`);
+      } else {
+        /* Multi-flow: batch export side by side with titles */
+        const result = await exportFlowsToMiro({
+          boardId: miroBoardId.trim(), accessToken: miroAccessToken,
+          flows: flowsToExport,
+        });
+        toast.success(
+          `Exported ${flowsToExport.length} flows to Miro: ${result.totalShapeCount} shapes, ${result.totalConnectorCount} connectors.`
+        );
+      }
     } catch (error) {
       console.error("Miro export error:", error);
       const status = typeof error === "object" && error && "status" in error ? (error as { status: number }).status : 0;
@@ -1088,10 +1124,13 @@ function AppInner() {
                 <div className="rounded-xl border border-sidebar-border bg-sidebar p-3 flex flex-col gap-2">
                   <p className="text-xs font-semibold text-sidebar-section-header uppercase tracking-wider px-1">Miro</p>
                   <Input className="h-8 text-[13px] rounded-lg" placeholder="Board ID" value={miroBoardId} onChange={(e) => setMiroBoardId(e.target.value)} />
-                  <Input className="h-8 text-[13px] rounded-lg" type="password" placeholder="Access token" value={miroToken} onChange={(e) => setMiroToken(e.target.value)} />
                   <Button variant="outline" size="sm" onClick={handleExportMiro} disabled={busyMiroExport}>
                     <Send className="w-3.5 h-3.5 mr-1.5" />
-                    {busyMiroExport ? "Exporting..." : "Export to Miro"}
+                    {busyMiroExport ? "Exporting..." : (
+                      (tab === "generate" && genResult && genResult.flows.length > 1) || (isEditorActive && isMultiFlowEditor)
+                        ? "Export All to Miro"
+                        : "Export to Miro"
+                    )}
                   </Button>
                 </div>
               </div>
