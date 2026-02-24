@@ -22,11 +22,29 @@ export type ExportFlowToMiroResult = {
   itemMap: Record<string, string>;
 };
 
+export type ExportFlowsToMiroOptions = {
+  boardId: string;
+  accessToken: string;
+  flows: FlowSpec[];
+  originX?: number;
+  originY?: number;
+  fetchImpl?: FetchLike;
+  maxRetries?: number;
+};
+
+export type ExportFlowsToMiroResult = {
+  totalShapeCount: number;
+  totalConnectorCount: number;
+  flowResults: ExportFlowToMiroResult[];
+};
+
 const BASE_URL = "https://api.miro.com/v2";
 const MIRO_GAP = 50;
 const MIRO_SPLIT_GAP = 110;
 const MIRO_CARD_WIDTH = 320;
 const MIRO_LANE_SPACING = 480;
+const MIRO_FLOW_GAP = 200;
+const MIRO_TITLE_OFFSET = 80;
 
 
 /* ── helpers ── */
@@ -387,6 +405,104 @@ function nodeContent(specNode: FlowSpec["nodes"][number]): string {
   return `<p><strong>${esc(title)}</strong></p>`;
 }
 
+/* ── shared layout preparation ── */
+
+type PreparedLayout = {
+  layoutNodes: PositionedNode[];
+  miroHeights: Map<string, number>;
+  miroWidths: Map<string, number>;
+  newY: Map<string, number>;
+  nodeById: Map<string, FlowSpec["nodes"][number]>;
+};
+
+function prepareFlowLayout(
+  flowSpec: FlowSpec,
+  positionOverrides?: Record<string, { x: number; y: number }>
+): PreparedLayout {
+  const layout = buildLayout(flowSpec, {
+    positionOverrides,
+    nodeSizeOverrides: {
+      note: { width: 320, height: 110 },
+      message: { width: MIRO_CARD_WIDTH, height: 230 },
+      wait: { width: MIRO_CARD_WIDTH, height: 48 },
+    }
+  });
+
+  const nodeById = new Map(flowSpec.nodes.map((n) => [n.id, n]));
+  const miroHeights = new Map<string, number>();
+  const miroWidths = new Map<string, number>();
+
+  for (const ln of layout.nodes) {
+    const specNode = nodeById.get(ln.id);
+    const wideTypes = new Set(["message", "wait"]);
+    const w = specNode && wideTypes.has(specNode.type) ? Math.max(ln.width, MIRO_CARD_WIDTH) : ln.width;
+    const h = specNode ? estimateMiroHeight(specNode, w) : ln.height;
+    miroHeights.set(ln.id, h);
+    miroWidths.set(ln.id, w);
+  }
+
+  const newY = recomputeMiroY(layout.nodes, flowSpec.edges, flowSpec.nodes, miroHeights);
+
+  return { layoutNodes: layout.nodes, miroHeights, miroWidths, newY, nodeById };
+}
+
+/* ── flow bounds measurement ── */
+
+type FlowBounds = { minX: number; maxX: number; minY: number; maxY: number; width: number; height: number };
+
+function computeFlowMiroBounds(flowSpec: FlowSpec): FlowBounds {
+  const { layoutNodes, miroWidths, miroHeights, newY } = prepareFlowLayout(flowSpec);
+
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+
+  for (const node of layoutNodes) {
+    const w = miroWidths.get(node.id) ?? node.width;
+    const h = miroHeights.get(node.id) ?? node.height;
+    const y = newY.get(node.id) ?? node.y;
+    const cx = node.lane * MIRO_LANE_SPACING;
+
+    minX = Math.min(minX, cx - w / 2);
+    maxX = Math.max(maxX, cx + w / 2);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y + h);
+  }
+
+  return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+/* ── title text creation ── */
+
+async function createTitleText(
+  fetchImpl: FetchLike,
+  boardId: string,
+  headers: Record<string, string>,
+  title: string,
+  centerX: number,
+  y: number,
+  width: number,
+  maxRetries: number
+): Promise<void> {
+  const payload = {
+    data: { content: `<p><strong>${esc(title)}</strong></p>` },
+    style: {
+      fontSize: "24",
+      textAlign: "center" as const,
+      color: "#1a1a1a",
+      fontFamily: "open_sans",
+    },
+    position: { x: centerX, y },
+    geometry: { width: Math.max(width, 300) }
+  };
+
+  await requestWithRetry(
+    fetchImpl,
+    `${BASE_URL}/boards/${boardId}/texts`,
+    { method: "POST", headers, body: JSON.stringify(payload) },
+    maxRetries
+  );
+}
+
 /* ── main export function ── */
 
 export async function exportFlowToMiro({
@@ -402,32 +518,8 @@ export async function exportFlowToMiro({
   /* Run layout engine to get logical lane assignments and topology.
      We derive Miro X positions from the lane property (not pixel x)
      using MIRO_LANE_SPACING, and recompute Y with content-based heights. */
-  const layout = buildLayout(flowSpec, {
-    positionOverrides,
-    nodeSizeOverrides: {
-      note: { width: 320, height: 110 },
-      message: { width: MIRO_CARD_WIDTH, height: 230 },
-      wait: { width: MIRO_CARD_WIDTH, height: 48 },
-    }
-  });
-
-  const nodeById = new Map(flowSpec.nodes.map((n) => [n.id, n]));
-
-  /* Compute dynamic sizes per node based on content.
-     Wait + message cards share the same width so vertical arrows align. */
-  const miroHeights = new Map<string, number>();
-  const miroWidths = new Map<string, number>();
-  for (const ln of layout.nodes) {
-    const specNode = nodeById.get(ln.id);
-    const wideTypes = new Set(["message", "wait"]);
-    const w = specNode && wideTypes.has(specNode.type) ? Math.max(ln.width, MIRO_CARD_WIDTH) : ln.width;
-    const h = specNode ? estimateMiroHeight(specNode, w) : ln.height;
-    miroHeights.set(ln.id, h);
-    miroWidths.set(ln.id, w);
-  }
-
-  /* Recompute Y positions using those heights + fixed gaps */
-  const newY = recomputeMiroY(layout.nodes, flowSpec.edges, flowSpec.nodes, miroHeights);
+  const { layoutNodes, miroHeights, miroWidths, newY, nodeById } =
+    prepareFlowLayout(flowSpec, positionOverrides);
 
   const itemMap: Record<string, string> = {};
   const headers = {
@@ -438,7 +530,7 @@ export async function exportFlowToMiro({
   const sideNodeTypes = new Set(["note", "strategy"]);
 
   /* ── Create shapes ── */
-  for (const positioned of layout.nodes) {
+  for (const positioned of layoutNodes) {
     const specNode = nodeById.get(positioned.id);
     if (!specNode) continue;
 
@@ -485,7 +577,7 @@ export async function exportFlowToMiro({
 
   /* ── Create connectors ── */
   const positionMap = new Map(
-    layout.nodes.map((n) => {
+    layoutNodes.map((n) => {
       const w = miroWidths.get(n.id) ?? n.width;
       const cx = n.lane * MIRO_LANE_SPACING;
       return [n.id, { x: cx - w / 2, width: w }];
@@ -549,4 +641,99 @@ export async function exportFlowToMiro({
     connectorCount: flowSpec.edges.length,
     itemMap
   };
+}
+
+/* ── batch export: multiple flows side by side ── */
+
+export async function exportFlowsToMiro({
+  boardId,
+  accessToken,
+  flows,
+  originX = 0,
+  originY = 0,
+  fetchImpl = fetch,
+  maxRetries = 3,
+}: ExportFlowsToMiroOptions): Promise<ExportFlowsToMiroResult> {
+  if (flows.length === 0) {
+    return { totalShapeCount: 0, totalConnectorCount: 0, flowResults: [] };
+  }
+
+  /* Single flow: delegate directly (preserves exact existing behavior) */
+  if (flows.length === 1) {
+    const result = await exportFlowToMiro({
+      boardId, accessToken, flowSpec: flows[0],
+      originX, originY, fetchImpl, maxRetries
+    });
+    return {
+      totalShapeCount: result.shapeCount,
+      totalConnectorCount: result.connectorCount,
+      flowResults: [result]
+    };
+  }
+
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json"
+  };
+
+  /* Phase 1: Measure all flows to compute horizontal placement */
+  const measurements = flows.map(flow => computeFlowMiroBounds(flow));
+
+  /* Phase 2: Compute X origins for each flow, placing them side by side */
+  const flowOrigins: { originX: number; centerX: number; titleWidth: number }[] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < flows.length; i++) {
+    const bounds = measurements[i];
+
+    /* originX so that the flow's left edge aligns with cursor:
+       originX + bounds.minX = cursor  →  originX = cursor - bounds.minX */
+    const flowOriginX = originX + cursor - bounds.minX;
+    const titleCenterX = flowOriginX + (bounds.minX + bounds.maxX) / 2;
+
+    flowOrigins.push({
+      originX: flowOriginX,
+      centerX: titleCenterX,
+      titleWidth: bounds.width
+    });
+
+    cursor += bounds.width + MIRO_FLOW_GAP;
+  }
+
+  /* Phase 3: Create titles and export each flow */
+  const flowResults: ExportFlowToMiroResult[] = [];
+  let totalShapes = 0;
+  let totalConnectors = 0;
+
+  for (let i = 0; i < flows.length; i++) {
+    const flow = flows[i];
+    const origin = flowOrigins[i];
+    const bounds = measurements[i];
+
+    /* Title text centered above the flow */
+    const titleY = originY + bounds.minY - MIRO_TITLE_OFFSET;
+
+    await createTitleText(
+      fetchImpl, boardId, headers,
+      flow.name,
+      origin.centerX,
+      titleY,
+      origin.titleWidth,
+      maxRetries
+    );
+    totalShapes++;
+
+    /* Export the flow itself */
+    const result = await exportFlowToMiro({
+      boardId, accessToken, flowSpec: flow,
+      originX: origin.originX, originY,
+      fetchImpl, maxRetries,
+    });
+
+    flowResults.push(result);
+    totalShapes += result.shapeCount;
+    totalConnectors += result.connectorCount;
+  }
+
+  return { totalShapeCount: totalShapes, totalConnectorCount: totalConnectors, flowResults };
 }
