@@ -25,6 +25,8 @@ export type ExportFlowToMiroResult = {
 const BASE_URL = "https://api.miro.com/v2";
 const MIRO_GAP = 50;
 const MIRO_SPLIT_GAP = 110;
+const MIRO_CARD_WIDTH = 320;
+const MIRO_LANE_SPACING = 480;
 
 
 /* ── helpers ── */
@@ -397,18 +399,22 @@ export async function exportFlowToMiro({
   fetchImpl = fetch,
   maxRetries = 3
 }: ExportFlowToMiroOptions): Promise<ExportFlowToMiroResult> {
-  /* Run layout engine for lane (X) assignments.
-     We'll recompute Y ourselves using content-based heights. */
+  /* Run layout engine to get logical lane assignments and topology.
+     We derive Miro X positions from the lane property (not pixel x)
+     using MIRO_LANE_SPACING, and recompute Y with content-based heights. */
   const layout = buildLayout(flowSpec, {
     positionOverrides,
-    nodeSizeOverrides: { note: { width: 320, height: 110 } }
+    nodeSizeOverrides: {
+      note: { width: 320, height: 110 },
+      message: { width: MIRO_CARD_WIDTH, height: 230 },
+      wait: { width: MIRO_CARD_WIDTH, height: 48 },
+    }
   });
 
   const nodeById = new Map(flowSpec.nodes.map((n) => [n.id, n]));
 
   /* Compute dynamic sizes per node based on content.
-     Wait + message cards share the same width (320) so vertical arrows align. */
-  const MIRO_CARD_WIDTH = 320;
+     Wait + message cards share the same width so vertical arrows align. */
   const miroHeights = new Map<string, number>();
   const miroWidths = new Map<string, number>();
   for (const ln of layout.nodes) {
@@ -441,10 +447,10 @@ export async function exportFlowToMiro({
     const h = miroHeights.get(positioned.id) ?? positioned.height;
     const y = newY.get(positioned.id) ?? positioned.y;
 
-    /* Use the lane center from the layout engine (original width) so every
-       shape on the same lane shares the exact same center-X, ensuring
-       straight vertical connectors regardless of overridden widths. */
-    const laneCenter = positioned.x + positioned.width / 2;
+    /* Derive center-X from the logical lane assignment (not the pixel x
+       from the canvas). This ensures Miro's wider shapes (320 px) get
+       proper spacing via MIRO_LANE_SPACING regardless of canvas positions. */
+    const laneCenter = positioned.lane * MIRO_LANE_SPACING;
 
     const payload = {
       data: {
@@ -479,7 +485,11 @@ export async function exportFlowToMiro({
 
   /* ── Create connectors ── */
   const positionMap = new Map(
-    layout.nodes.map((n) => [n.id, { x: n.x, width: miroWidths.get(n.id) ?? n.width }])
+    layout.nodes.map((n) => {
+      const w = miroWidths.get(n.id) ?? n.width;
+      const cx = n.lane * MIRO_LANE_SPACING;
+      return [n.id, { x: cx - w / 2, width: w }];
+    })
   );
 
   for (const edge of flowSpec.edges) {
